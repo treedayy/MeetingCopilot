@@ -12,7 +12,8 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import llm
+from . import gateway, llm
+from .llm import Tier
 from .models import (
     ActionItem, CoachTip, Concept, Decision, Diagram, HealthSnapshot, Insight,
     Meeting, MemoryItem, Person, RetrievalItem, Segment, SuggestedQuestion,
@@ -47,7 +48,7 @@ def _collect(db: Session, meeting: Meeting) -> dict:
 
 async def generate_report(db: Session, meeting: Meeting, my_name: str = "") -> str:
     data = _collect(db, meeting)
-    llm_sections = await _llm_sections(meeting, data) if llm.llm_available() else {}
+    llm_sections = await _llm_sections(meeting, data) if gateway.should_invoke("report_generation") else {}
     return _assemble(meeting, data, llm_sections, my_name)
 
 
@@ -66,7 +67,7 @@ async def _llm_sections(meeting: Meeting, data: dict) -> dict:
         '"missed_opportunities": ["moments the attendee could have contributed"]}'
     )
     user = f"MEETING: {meeting.title}\n\nTRANSCRIPT:\n{transcript}\n\nDECISIONS:\n{decisions}\n\nACTIONS:\n{actions}"
-    return await llm.complete_json(system, user, max_tokens=8000) or {}
+    return await llm.complete_json(Tier.LARGE, system, user, max_tokens=8000) or {}
 
 
 def _assemble(meeting: Meeting, data: dict, ai: dict, my_name: str) -> str:

@@ -32,4 +32,14 @@ app.include_router(ws.router)
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "llm_enabled": settings.llm_enabled, "model": settings.anthropic_model if settings.llm_enabled else None}
+    from .llm import get_usage, llm_available
+
+    return {"ok": True, "llm_enabled": llm_available(), "router": get_usage()}
+
+
+@app.get("/api/usage")
+def usage():
+    """Model-router metering: calls, tokens, latency and errors per tier."""
+    from .llm import get_usage
+
+    return get_usage()

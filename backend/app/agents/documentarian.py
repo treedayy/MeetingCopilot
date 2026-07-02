@@ -4,7 +4,7 @@ is available it periodically enriches the whole state with a structured pass."""
 
 import logging
 
-from .. import llm
+from .. import gateway, llm
 from ..state import MeetingState
 from .base import Agent, AgentServices
 
@@ -21,7 +21,7 @@ class DocumentarianAgent(Agent):
         events += self._update_topic(state)
         if state.tick % 2 == 0 or events:  # summarize regularly and on topic shifts
             events += self._understanding(state, new)
-        if services.llm_enabled and state.tick % 3 == 0:
+        if state.tick % 3 == 0 and gateway.should_invoke("live_enrichment"):
             try:
                 events += await self._llm_enrich(state)
             except Exception:
@@ -105,7 +105,11 @@ Only NEW concepts not in the known list. Insights are your private running thoug
             "topic": state.topic,
             "decisions": [d["decision"][:80] for d in state.decisions],
         }
-        data = await llm.complete_json(self.SYSTEM_PROMPT, f"STATE: {known}\n\nTRANSCRIPT:\n{transcript}")
+        data = await llm.complete_json(
+            gateway.decide("live_enrichment"),
+            self.SYSTEM_PROMPT,
+            f"STATE: {known}\n\nTRANSCRIPT:\n{transcript}",
+        )
         if not data:
             return []
         t = state.last_t()

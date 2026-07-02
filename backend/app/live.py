@@ -122,10 +122,12 @@ class LiveSession:
         )
         if mode == "demo":
             self.state.expected_total_segments = len(DEMO_SCRIPT)
+        from .llm import llm_available
+
         self.coordinator = Coordinator(AgentServices(
             db_factory=SessionLocal,
             roles=SPEAKER_ROLES if mode == "demo" else {},
-            llm_enabled=get_settings().llm_enabled,
+            llm_enabled=llm_available(),
         ))
         self.reasoning_task = asyncio.create_task(self._reasoning_loop())
 

@@ -6,8 +6,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Model routing (Layer 5). Provider-agnostic: anthropic | openai | auto | none.
+    # "openai" accepts any /chat/completions-compatible endpoint (OpenAI, Azure,
+    # vLLM, Ollama) via openai_base_url, so local models are first-class.
+    llm_provider: str = "auto"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    model_small: str = ""   # per-tier overrides; defaults resolved per provider
+    model_medium: str = ""
+    model_large: str = ""
+
     database_url: str = "sqlite:///./meetingcopilot.db"
     deepgram_api_key: str = ""
     analysis_every_segments: int = 4
@@ -15,7 +24,9 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.anthropic_api_key)
+        if self.llm_provider == "none":
+            return False
+        return bool(self.anthropic_api_key or self.openai_api_key or self.llm_provider == "openai")
 
 
 @lru_cache

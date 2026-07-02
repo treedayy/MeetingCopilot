@@ -81,12 +81,21 @@ python test_e2e.py        # against a running server: real WebSocket session, al
 
 ## Configuration (`backend/.env`)
 
+The model layer is provider-agnostic and tiered — see [ARCHITECTURE.md](ARCHITECTURE.md)
+for the full production architecture (intelligence gateway, model router, memory,
+connectors, scaling plan).
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | *(empty)* | Enables Claude enrichment; otherwise heuristic mode |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | Model for enrichment + report writing |
+| `LLM_PROVIDER` | `auto` | `anthropic`, `openai` (any /chat/completions endpoint incl. vLLM/Ollama), or `none` |
+| `ANTHROPIC_API_KEY` | *(empty)* | Enables the Anthropic provider |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | *(empty)* / api.openai.com | OpenAI-compatible provider, including local models |
+| `MODEL_SMALL` / `MODEL_MEDIUM` / `MODEL_LARGE` | per-provider defaults | Per-tier model overrides |
 | `DATABASE_URL` | `sqlite:///./meetingcopilot.db` | Any SQLAlchemy URL |
 | `DEEPGRAM_API_KEY` | *(empty)* | Reserved for server-side streaming STT with diarization |
+
+With no provider configured the deterministic pipeline runs the entire product offline;
+model usage is metered per tier at `/api/usage`.
 
 Live-mic mode uses the browser Web Speech API (Chrome/Edge) — free, no keys. Knowledge base = markdown files in `backend/knowledge/`.
 

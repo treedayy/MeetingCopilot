@@ -12,6 +12,9 @@ export interface MeetingState {
   connected: boolean;
   status: string;
   reportReady: boolean;
+  meetingTitle: string;
+  meetingStatus: string; // live | ended
+  meetingMode: string; // demo | live
   segments: TranscriptSegment[];
   understandings: Understanding[];
   insights: Insight[];
@@ -33,6 +36,9 @@ const initialState: MeetingState = {
   connected: false,
   status: "connecting…",
   reportReady: false,
+  meetingTitle: "",
+  meetingStatus: "live",
+  meetingMode: "demo",
   segments: [],
   understandings: [],
   insights: [],
@@ -123,7 +129,7 @@ function reducer(state: MeetingState, e: Event): MeetingState {
     case "state_update":
       return { ...state, health: e as unknown as HealthState };
     case "report_ready":
-      return { ...state, reportReady: true, status: "report ready" };
+      return { ...state, reportReady: true, status: "completed", meetingStatus: "ended" };
     default:
       return state;
   }
@@ -142,6 +148,9 @@ export function useMeeting(meetingId: string) {
       dispatch({
         type: "hydrate",
         data: {
+          meetingTitle: data.title,
+          meetingStatus: data.status,
+          meetingMode: data.mode,
           segments: data.segments,
           understandings: data.understandings,
           insights: data.insights,

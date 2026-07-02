@@ -1,11 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface: #0b0d13;
-  --color-panel: #12151f;
-  --color-edge: #232838;
-  --color-accent: #6d8bff;
-  --color-accent-2: #37d0c4;
+  /* Gray-first neutral system. One muted accent, used sparingly. */
+  --color-surface: #0e0f10;
+  --color-panel: #151619;
+  --color-raised: #1b1c20;
+  --color-edge: #26272c;
+  --color-accent: #5e6ad2;
+  --color-accent-2: #8a91a8;
 }
 
 html,
@@ -14,9 +16,9 @@ body {
 }
 
 body {
-  background: #0b0d13;
-  color: #e6e9f2;
-  font-feature-settings: "cv02", "cv03";
+  background: var(--color-surface);
+  color: #d4d6dd;
+  font-feature-settings: "cv02", "cv03", "tnum";
 }
 
 ::-webkit-scrollbar {
@@ -24,7 +26,7 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3044;
+  background: #2c2d33;
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
@@ -33,37 +35,47 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded-2xl border border-edge bg-panel/80 backdrop-blur-md flex flex-col min-h-0 overflow-hidden;
+    @apply rounded-lg border border-edge bg-panel flex flex-col min-h-0 overflow-hidden;
   }
 
   .panel-title {
-    @apply flex items-center gap-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 border-b border-edge shrink-0;
+    @apply flex items-center gap-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-neutral-500 border-b border-edge shrink-0;
   }
 
   .chip {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium;
+    @apply inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium;
+  }
+
+  /* Enterprise table primitives */
+  .data-table {
+    @apply w-full border-collapse text-[13px];
+  }
+  .data-table th {
+    @apply border-b border-edge px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-500;
+  }
+  .data-table td {
+    @apply border-b border-edge px-3 py-2 align-top text-neutral-300;
+  }
+  .data-table tbody tr {
+    @apply transition-colors hover:bg-white/[0.02];
+  }
+
+  .tag {
+    @apply inline-flex items-center rounded border border-edge bg-raised px-1.5 py-0.5 text-[11px] font-medium text-neutral-400;
   }
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-.live-dot {
-  animation: pulse-dot 1.6s ease-in-out infinite;
-}
-
-.report-md h1 { @apply text-3xl font-bold mt-8 mb-4 text-white; }
-.report-md h2 { @apply text-xl font-semibold mt-8 mb-3 text-white border-b border-edge pb-2; }
-.report-md h3 { @apply text-base font-semibold mt-5 mb-2 text-slate-100; }
-.report-md p { @apply my-3 leading-relaxed text-slate-300; }
-.report-md li { @apply my-1.5 ml-5 list-disc text-slate-300; }
+.report-md h1 { @apply text-2xl font-semibold mt-8 mb-4 text-neutral-100; }
+.report-md h2 { @apply text-lg font-semibold mt-8 mb-3 text-neutral-100 border-b border-edge pb-2; }
+.report-md h3 { @apply text-base font-semibold mt-5 mb-2 text-neutral-200; }
+.report-md p { @apply my-3 leading-relaxed text-neutral-400; }
+.report-md li { @apply my-1.5 ml-5 list-disc text-neutral-400; }
 .report-md ol li { @apply list-decimal; }
 .report-md table { @apply w-full my-4 text-sm border-collapse; }
-.report-md th { @apply text-left px-3 py-2 bg-panel border border-edge text-slate-200; }
-.report-md td { @apply px-3 py-2 border border-edge text-slate-300 align-top; }
-.report-md code { @apply text-[13px] bg-panel px-1.5 py-0.5 rounded text-cyan-200; }
-.report-md pre { @apply bg-panel border border-edge rounded-xl p-4 my-4 overflow-x-auto; }
-.report-md pre code { @apply bg-transparent p-0 text-slate-200 whitespace-pre-wrap; }
-.report-md strong { @apply text-slate-100; }
+.report-md th { @apply text-left px-3 py-2 bg-panel border border-edge text-neutral-300; }
+.report-md td { @apply px-3 py-2 border border-edge text-neutral-400 align-top; }
+.report-md code { @apply text-[13px] bg-panel px-1.5 py-0.5 rounded text-neutral-300; }
+.report-md pre { @apply bg-panel border border-edge rounded-lg p-4 my-4 overflow-x-auto; }
+.report-md pre code { @apply bg-transparent p-0 text-neutral-300 whitespace-pre-wrap; }
+.report-md strong { @apply text-neutral-200; }
 .report-md hr { @apply border-edge my-8; }

@@ -4,7 +4,8 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, Brain, Check, Copy, Download, Play } from "lucide-react";
+import { Check, Copy, Download, History } from "lucide-react";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { api } from "@/lib/api";
 
 export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
@@ -46,56 +47,49 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      <div className="mb-6 flex items-center gap-3">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/50"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Home
-        </button>
-        <div className="ml-auto flex gap-2">
-          <button
-            onClick={() => router.push(`/meeting/${id}/replay`)}
-            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/50"
-          >
-            <Play className="h-3.5 w-3.5" /> Replay
-          </button>
-          <button
-            onClick={() => {
-              if (report?.report_md) {
-                navigator.clipboard.writeText(report.report_md).catch(() => undefined);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }
-            }}
-            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/50"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-            Copy markdown
-          </button>
-          <button
-            onClick={download}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-accent to-accent-2 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-          >
-            <Download className="h-3.5 w-3.5" /> Download .md
-          </button>
-        </div>
-      </div>
+  const buttonStyle =
+    "flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04]";
 
-      {error && <p className="text-sm text-red-300">Couldn&apos;t load the report — is the backend running?</p>}
-      {!report && !error && (
-        <div className="flex items-center gap-3 text-sm text-slate-400">
-          <Brain className="h-5 w-5 animate-pulse text-accent" />
-          Generating your executive report…
-        </div>
-      )}
-      {report?.report_md && (
-        <article className="report-md panel px-8 py-6">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.report_md}</ReactMarkdown>
-        </article>
-      )}
-    </main>
+  return (
+    <AppShell>
+      <PageHeader
+        title={report?.title ? `${report.title} — Summary` : "Meeting summary"}
+        actions={
+          <>
+            <button onClick={() => router.push(`/meeting/${id}/replay`)} className={buttonStyle}>
+              <History className="h-3.5 w-3.5" /> History
+            </button>
+            <button
+              onClick={() => {
+                if (report?.report_md) {
+                  navigator.clipboard.writeText(report.report_md).catch(() => undefined);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }
+              }}
+              className={buttonStyle}
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+              Copy
+            </button>
+            <button
+              onClick={download}
+              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+          </>
+        }
+      />
+      <div className="max-w-4xl px-6 py-5">
+        {error && <p className="text-sm text-red-400">Couldn&apos;t load the summary — is the server running?</p>}
+        {!report && !error && <p className="text-[13px] text-neutral-500">Preparing summary…</p>}
+        {report?.report_md && (
+          <article className="report-md rounded-md border border-edge bg-panel px-8 py-6">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.report_md}</ReactMarkdown>
+          </article>
+        )}
+      </div>
+    </AppShell>
   );
 }

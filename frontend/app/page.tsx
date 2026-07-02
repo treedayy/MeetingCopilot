@@ -2,190 +2,143 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import {
-  FileText, Mic, PlayCircle, Radio, Search, Sparkles, Trash2, UserCog,
-} from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { api } from "@/lib/api";
-import { fmtTime, type MeetingSummary, type SearchResult } from "@/lib/types";
+import type { MeetingSummary } from "@/lib/types";
 
-export default function Home() {
+function StatusTag({ status }: { status: string }) {
+  return status === "live" ? (
+    <span className="tag border-emerald-900 bg-emerald-950/60 text-emerald-400">
+      <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      In progress
+    </span>
+  ) : (
+    <span className="tag">Completed</span>
+  );
+}
+
+export default function MeetingsPage() {
   const router = useRouter();
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[] | null>(null);
-  const [starting, setStarting] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [backendUp, setBackendUp] = useState(true);
+  const [starting, setStarting] = useState(false);
 
   const refresh = () =>
-    api.listMeetings().then((m) => {
-      setMeetings(m);
-      setBackendUp(true);
-    }).catch(() => setBackendUp(false));
+    api.listMeetings()
+      .then((m) => {
+        setMeetings(m);
+        setBackendUp(true);
+      })
+      .catch(() => setBackendUp(false))
+      .finally(() => setLoaded(true));
 
   useEffect(() => {
     refresh();
   }, []);
 
-  useEffect(() => {
-    if (!query.trim()) {
-      setResults(null);
-      return;
-    }
-    const id = setTimeout(() => {
-      api.search(query).then((r) => setResults(r.results)).catch(() => setResults([]));
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
-
   const start = async (mode: "demo" | "live") => {
-    setStarting(mode);
+    setStarting(true);
     try {
       const m = await api.createMeeting(mode);
       router.push(`/meeting/${m.id}${mode === "demo" ? "?demo=1" : ""}`);
     } catch {
       setBackendUp(false);
-      setStarting(null);
+      setStarting(false);
     }
   };
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-14">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center gap-3">
-          <span className="h-3.5 w-3.5 rounded-md bg-accent" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Meeting Copilot</h1>
-            <p className="text-sm text-slate-400">
-              An expert teammate, silently working beside you in every meeting.
-            </p>
+    <AppShell>
+      <PageHeader
+        title="Meetings"
+        meta={meetings.length ? `${meetings.length} total` : undefined}
+        actions={
+          <>
+            <button
+              onClick={() => start("demo")}
+              disabled={starting}
+              className="rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04] disabled:opacity-50"
+            >
+              Sample meeting
+            </button>
+            <button
+              onClick={() => start("live")}
+              disabled={starting}
+              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New meeting
+            </button>
+          </>
+        }
+      />
+
+      <div className="px-6 py-4">
+        {!backendUp && (
+          <div className="mb-4 rounded-md border border-amber-900 bg-amber-950/40 px-4 py-3 text-[13px] text-amber-300">
+            Cannot reach the server. Start it with{" "}
+            <code className="rounded bg-black/30 px-1.5 py-0.5">uvicorn app.main:app --port 8000</code>{" "}
+            in <code className="rounded bg-black/30 px-1.5 py-0.5">backend/</code>, then reload.
           </div>
-          <button
-            onClick={() => router.push("/settings")}
-            title="Personalization"
-            className="ml-auto rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-200"
-          >
-            <UserCog className="h-4 w-4" />
-          </button>
-        </div>
-      </motion.div>
+        )}
 
-      {!backendUp && (
-        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          Backend unreachable. Start it with{" "}
-          <code className="rounded bg-black/30 px-1.5 py-0.5">uvicorn app.main:app --port 8000</code>{" "}
-          in <code className="rounded bg-black/30 px-1.5 py-0.5">backend/</code>, then reload.
-        </div>
-      )}
-
-      <div className="mt-10 grid gap-4 sm:grid-cols-2">
-        <button
-          disabled={starting !== null}
-          onClick={() => start("demo")}
-          className="panel p-6 text-left transition-colors hover:border-accent/50 disabled:opacity-60"
-        >
-          <PlayCircle className="h-6 w-6 text-accent" />
-          <div className="mt-3 font-semibold text-white">
-            {starting === "demo" ? "Starting…" : "Watch a demo meeting"}
-          </div>
-          <p className="mt-1 text-sm text-slate-400">
-            A scripted engineering meeting streams in live. No setup, no API keys.
-          </p>
-        </button>
-
-        <button
-          disabled={starting !== null}
-          onClick={() => start("live")}
-          className="panel p-6 text-left transition-colors hover:border-accent-2/50 disabled:opacity-60"
-        >
-          <Mic className="h-6 w-6 text-accent-2" />
-          <div className="mt-3 font-semibold text-white">
-            {starting === "live" ? "Starting…" : "Start a live meeting"}
-          </div>
-          <p className="mt-1 text-sm text-slate-400">
-            Your microphone or typed input. Works alongside any meeting app.
-          </p>
-        </button>
-      </div>
-
-      <div className="mt-12">
-        <div className="flex items-center gap-2 text-slate-300">
-          <Search className="h-4 w-4" />
-          <h2 className="text-sm font-semibold uppercase tracking-widest">Meeting memory</h2>
-        </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder='Search everything ever discussed — "authentication", "Redis", "blockers"…'
-          className="mt-3 w-full rounded-xl border border-edge bg-panel px-4 py-3 text-sm outline-none placeholder:text-slate-500 focus:border-accent/60"
-        />
-        {results !== null && (
-          <div className="mt-3 space-y-2">
-            {results.length === 0 && <p className="text-sm text-slate-500">No matches yet.</p>}
-            {results.map((r, i) => (
-              <button
-                key={i}
-                onClick={() => router.push(`/meeting/${r.meeting_id}${r.kind === "transcript" ? "" : ""}`)}
-                className="panel w-full p-3 text-left text-sm transition-colors hover:border-accent/40"
-              >
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span className="chip border border-edge bg-surface text-slate-300">{r.kind}</span>
-                  <span>{r.meeting_title}</span>
-                  <span>· {fmtTime(r.t)}</span>
-                </div>
-                <div className="mt-1 text-slate-300">{r.text}</div>
-              </button>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th className="w-32">Status</th>
+              <th className="w-44">Date</th>
+              <th className="w-24">Source</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {meetings.map((m) => (
+              <tr key={m.id}>
+                <td>
+                  <button
+                    onClick={() =>
+                      router.push(m.status === "live" ? `/meeting/${m.id}` : `/meeting/${m.id}?tab=notes`)
+                    }
+                    className="text-left font-medium text-neutral-200 hover:text-white hover:underline"
+                  >
+                    {m.title}
+                  </button>
+                </td>
+                <td>
+                  <StatusTag status={m.status} />
+                </td>
+                <td className="whitespace-nowrap text-neutral-500">
+                  {new Date(m.started_at).toLocaleString(undefined, {
+                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                  })}
+                </td>
+                <td className="text-neutral-500">{m.mode === "demo" ? "Sample" : "Live"}</td>
+                <td>
+                  <button
+                    onClick={async () => {
+                      await api.deleteMeeting(m.id).catch(() => undefined);
+                      refresh();
+                    }}
+                    title="Delete meeting"
+                    className="rounded p-1 text-neutral-600 transition-colors hover:bg-white/[0.04] hover:text-red-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              </tr>
             ))}
+          </tbody>
+        </table>
+        {loaded && meetings.length === 0 && backendUp && (
+          <div className="rounded-b-md border-x border-b border-edge px-4 py-10 text-center text-[13px] text-neutral-500">
+            No meetings yet. Create one with <span className="text-neutral-300">New meeting</span>, or view a{" "}
+            <span className="text-neutral-300">Sample meeting</span> with generated data.
           </div>
         )}
       </div>
-
-      <div className="mt-12">
-        <div className="flex items-center gap-2 text-slate-300">
-          <Sparkles className="h-4 w-4" />
-          <h2 className="text-sm font-semibold uppercase tracking-widest">Past meetings</h2>
-        </div>
-        <div className="mt-3 space-y-2">
-          {meetings.length === 0 && (
-            <p className="text-sm text-slate-500">Nothing yet — start with the demo meeting above.</p>
-          )}
-          {meetings.map((m) => (
-            <div
-              key={m.id}
-              className="panel flex items-center gap-3 p-4 transition-colors hover:border-accent/40"
-            >
-              <button
-                onClick={() => router.push(m.status === "live" ? `/meeting/${m.id}` : `/meeting/${m.id}/report`)}
-                className="flex flex-1 items-center gap-3 text-left"
-              >
-                {m.status === "live" ? (
-                  <Radio className="live-dot h-4 w-4 shrink-0 text-red-400" />
-                ) : (
-                  <FileText className="h-4 w-4 shrink-0 text-slate-500" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-slate-200">{m.title}</div>
-                  <div className="text-xs text-slate-500">
-                    {new Date(m.started_at).toLocaleString()} · {m.mode}
-                    {m.status === "live" ? " · in progress" : m.has_report ? " · report ready" : ""}
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  await api.deleteMeeting(m.id).catch(() => undefined);
-                  refresh();
-                }}
-                title="Delete meeting"
-                className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </main>
+    </AppShell>
   );
 }

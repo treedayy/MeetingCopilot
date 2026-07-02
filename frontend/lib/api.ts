@@ -33,7 +33,43 @@ export const api = {
   getProfile: () => request<Profile>("/api/profile"),
   updateProfile: (profile: Partial<Profile>) =>
     request<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(profile) }),
+  activity: () => request<ActivityEvent[]>("/api/activity"),
+  tasks: () => request<WorkTask[]>("/api/tasks"),
+  decisions: () => request<WorkDecision[]>("/api/decisions"),
 };
+
+export interface ActivityEvent {
+  at: string;
+  type: "meeting_started" | "meeting_ended" | "decision" | "task";
+  meeting_id: string;
+  meeting_title: string;
+  text: string;
+  needs_review?: boolean;
+}
+
+export interface WorkTask {
+  id: string;
+  meeting_id: string;
+  meeting_title: string;
+  at: string;
+  task: string;
+  owner: string;
+  deadline: string;
+  priority: string;
+  status: string;
+  needs_review: boolean;
+}
+
+export interface WorkDecision {
+  id: string;
+  meeting_id: string;
+  meeting_title: string;
+  at: string;
+  decision: string;
+  reason: string;
+  approved_by: string;
+  needs_review: boolean;
+}
 
 export interface Profile {
   name: string;

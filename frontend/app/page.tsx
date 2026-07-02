@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  Brain, FileText, Mic, PlayCircle, Radio, Search, Sparkles, Trash2, UserCog,
+  FileText, Mic, PlayCircle, Radio, Search, Sparkles, Trash2, UserCog,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtTime, type MeetingSummary, type SearchResult } from "@/lib/types";
@@ -53,19 +53,17 @@ export default function Home() {
     <main className="mx-auto max-w-5xl px-6 py-14">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-2 shadow-lg shadow-accent/20">
-            <Brain className="h-6 w-6 text-white" />
-          </div>
+          <span className="h-3.5 w-3.5 rounded-md bg-accent" />
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Meeting Copilot</h1>
             <p className="text-sm text-slate-400">
-              An elite staff engineer, TPM, and tutor — silently working beside you in every meeting.
+              An expert teammate, silently working beside you in every meeting.
             </p>
           </div>
           <button
             onClick={() => router.push("/settings")}
             title="Personalization"
-            className="ml-auto rounded-xl border border-edge p-2.5 text-slate-400 transition-colors hover:border-accent/50 hover:text-slate-200"
+            className="ml-auto rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-200"
           >
             <UserCog className="h-4 w-4" />
           </button>
@@ -81,41 +79,33 @@ export default function Home() {
       )}
 
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
-        <motion.button
-          whileHover={{ scale: 1.015 }}
-          whileTap={{ scale: 0.99 }}
+        <button
           disabled={starting !== null}
           onClick={() => start("demo")}
-          className="panel group relative overflow-hidden p-6 text-left transition-colors hover:border-accent/50 disabled:opacity-60"
+          className="panel p-6 text-left transition-colors hover:border-accent/50 disabled:opacity-60"
         >
-          <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-accent/10 blur-2xl transition-all group-hover:bg-accent/20" />
-          <PlayCircle className="h-7 w-7 text-accent" />
+          <PlayCircle className="h-6 w-6 text-accent" />
           <div className="mt-3 font-semibold text-white">
             {starting === "demo" ? "Starting…" : "Watch a demo meeting"}
           </div>
           <p className="mt-1 text-sm text-slate-400">
-            A scripted engineering meeting streams in live — watch the copilot understand, teach, and
-            extract in real time. No setup, no API keys.
+            A scripted engineering meeting streams in live. No setup, no API keys.
           </p>
-        </motion.button>
+        </button>
 
-        <motion.button
-          whileHover={{ scale: 1.015 }}
-          whileTap={{ scale: 0.99 }}
+        <button
           disabled={starting !== null}
           onClick={() => start("live")}
-          className="panel group relative overflow-hidden p-6 text-left transition-colors hover:border-accent-2/50 disabled:opacity-60"
+          className="panel p-6 text-left transition-colors hover:border-accent-2/50 disabled:opacity-60"
         >
-          <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-accent-2/10 blur-2xl transition-all group-hover:bg-accent-2/20" />
-          <Mic className="h-7 w-7 text-accent-2" />
+          <Mic className="h-6 w-6 text-accent-2" />
           <div className="mt-3 font-semibold text-white">
             {starting === "live" ? "Starting…" : "Start a live meeting"}
           </div>
           <p className="mt-1 text-sm text-slate-400">
-            Uses your microphone (browser speech recognition) or typed input. Point it at any real
-            meeting audio and let it listen.
+            Your microphone or typed input. Works alongside any meeting app.
           </p>
-        </motion.button>
+        </button>
       </div>
 
       <div className="mt-12">

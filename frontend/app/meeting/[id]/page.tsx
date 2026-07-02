@@ -3,14 +3,11 @@
 import { Suspense, use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Brain, Compass, FileText, Gavel, GraduationCap, History, ListTodo,
-  MessageCircleQuestion, Mic, MicOff, Network, PictureInPicture2, Send,
-  Square, Users, Workflow, X,
-} from "lucide-react";
+import { Check, Copy, Mic, MicOff, PictureInPicture2, Send, Square } from "lucide-react";
 import { useMeeting } from "@/lib/useMeeting";
-import type { CoachTip } from "@/lib/types";
-import { HealthStrip } from "@/components/HealthStrip";
+import { resolveFocus, resolveSuggestion } from "@/lib/focus";
+import { FocusCard } from "@/components/FocusCard";
+import { Drawer } from "@/components/Drawer";
 import { TranscriptPanel } from "@/components/panels/TranscriptPanel";
 import { UnderstandingPanel } from "@/components/panels/UnderstandingPanel";
 import { TutorPanel } from "@/components/panels/TutorPanel";
@@ -23,19 +20,24 @@ import { GraphPanel } from "@/components/panels/GraphPanel";
 import { MemoryPanel } from "@/components/panels/MemoryPanel";
 import { ArchPanel } from "@/components/panels/ArchPanel";
 
-const TABS = [
-  { key: "coach", label: "Coach", icon: Compass },
-  { key: "tutor", label: "Tutor", icon: GraduationCap },
-  { key: "questions", label: "Ask", icon: MessageCircleQuestion },
-  { key: "actions", label: "Actions", icon: ListTodo },
-  { key: "decisions", label: "Decisions", icon: Gavel },
-  { key: "memory", label: "Memory", icon: History },
-  { key: "arch", label: "Arch", icon: Workflow },
-  { key: "graph", label: "Graph", icon: Network },
-  { key: "people", label: "People", icon: Users },
-] as const;
+type DrawerKey =
+  | "actions" | "decisions" | "concepts" | "people"
+  | "transcript" | "reasoning" | "questions" | "memory" | "arch" | "graph" | "coach"
+  | null;
 
-type TabKey = (typeof TABS)[number]["key"];
+const DRAWER_TITLES: Record<Exclude<DrawerKey, null>, string> = {
+  actions: "Action items",
+  decisions: "Decisions",
+  concepts: "Concepts explained",
+  people: "People",
+  transcript: "Transcript",
+  reasoning: "AI reasoning",
+  questions: "Questions worth asking",
+  memory: "Memory & context",
+  arch: "Architecture",
+  graph: "Knowledge graph",
+  coach: "Coaching log",
+};
 
 export default function MeetingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -46,63 +48,18 @@ export default function MeetingPage({ params }: { params: Promise<{ id: string }
   );
 }
 
-/** High-urgency coach tips surface as a transient toast so they aren't missed
- *  while another tab is open. */
-function CoachToast({ tips }: { tips: CoachTip[] }) {
-  const [visible, setVisible] = useState<CoachTip | null>(null);
-  const seen = useRef(0);
-  useEffect(() => {
-    const fresh = tips.slice(seen.current);
-    seen.current = tips.length;
-    const urgent = fresh.find((t) => t.urgency === "high");
-    if (urgent) {
-      setVisible(urgent);
-      const timer = setTimeout(() => setVisible(null), 7000);
-      return () => clearTimeout(timer);
-    }
-  }, [tips]);
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 10 }}
-          className="fixed bottom-20 right-4 z-50 max-w-sm rounded-xl border border-rose-400/40 bg-panel/95 p-3.5 shadow-2xl shadow-black/50 backdrop-blur-md"
-        >
-          <div className="flex items-start gap-2.5">
-            <Compass className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" />
-            <div className="flex-1">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-rose-300">
-                Coach — act now
-              </div>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-200">{visible.text}</p>
-            </div>
-            <button onClick={() => setVisible(null)} className="text-slate-500 hover:text-slate-300">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
 function LiveMeeting({ id }: { id: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state, startDemo, sendUtterance, endMeeting, markAction, toggleMic, micActive } =
     useMeeting(id);
-  const [tab, setTab] = useState<TabKey>("coach");
+  const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [input, setInput] = useState("");
   const [speaker, setSpeaker] = useState("Me");
   const [ending, setEnding] = useState(false);
+  const [copied, setCopied] = useState(false);
   const demoStarted = useRef(false);
   const pipWindow = useRef<Window | null>(null);
-  const seen = useRef<Record<TabKey, number>>({
-    coach: 0, tutor: 0, questions: 0, actions: 0, decisions: 0,
-    memory: 0, arch: 0, graph: 0, people: 0,
-  });
 
   useEffect(() => {
     if (searchParams.get("demo") && state.connected && !demoStarted.current && state.segments.length === 0) {
@@ -118,8 +75,6 @@ function LiveMeeting({ id }: { id: string }) {
     }
   }, [state.reportReady, ending, id, router]);
 
-  // Overlay: Document Picture-in-Picture (a real always-on-top window in
-  // Chrome/Edge) hosting the compact overlay route; popup as fallback.
   const toggleOverlay = useCallback(async () => {
     if (pipWindow.current && !pipWindow.current.closed) {
       pipWindow.current.close();
@@ -132,7 +87,7 @@ function LiveMeeting({ id }: { id: string }) {
     }).documentPictureInPicture;
     if (docPiP) {
       try {
-        const pip = await docPiP.requestWindow({ width: 380, height: 420 });
+        const pip = await docPiP.requestWindow({ width: 360, height: 200 });
         pip.document.body.style.margin = "0";
         pip.document.body.style.background = "#0b0d13";
         const frame = pip.document.createElement("iframe");
@@ -142,10 +97,10 @@ function LiveMeeting({ id }: { id: string }) {
         pipWindow.current = pip;
         return;
       } catch {
-        /* user denied or unsupported — fall through to popup */
+        /* fall through to popup */
       }
     }
-    pipWindow.current = window.open(overlayUrl, "copilot-overlay", "width=380,height=440,popup=yes");
+    pipWindow.current = window.open(overlayUrl, "copilot-overlay", "width=360,height=240,popup=yes");
   }, [id]);
 
   useEffect(() => {
@@ -154,23 +109,15 @@ function LiveMeeting({ id }: { id: string }) {
         e.preventDefault();
         toggleOverlay();
       }
+      if (e.key === "Escape") setDrawer(null);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [toggleOverlay]);
 
-  const counts: Record<TabKey, number> = {
-    coach: state.coachTips.length,
-    tutor: state.concepts.length,
-    questions: state.questions.length,
-    actions: state.actions.length,
-    decisions: state.decisions.length,
-    memory: state.memoryItems.length + state.retrievals.length,
-    arch: state.diagrams.length ? state.diagrams[state.diagrams.length - 1].version : 0,
-    graph: state.nodes.length,
-    people: state.people.length,
-  };
-  seen.current[tab] = counts[tab];
+  const focus = resolveFocus(state);
+  const suggestion = resolveSuggestion(state);
+  const lastLine = state.segments[state.segments.length - 1];
 
   const submit = () => {
     if (input.trim()) {
@@ -179,44 +126,49 @@ function LiveMeeting({ id }: { id: string }) {
     }
   };
 
+  const secondary: { key: Exclude<DrawerKey, null>; label: string; count: number }[] = [
+    { key: "actions", label: "Actions", count: state.actions.length },
+    { key: "decisions", label: "Decisions", count: state.decisions.length },
+    { key: "concepts", label: "Concepts", count: state.concepts.length },
+    { key: "people", label: "People", count: state.people.length },
+  ];
+  const tertiary: { key: Exclude<DrawerKey, null>; label: string }[] = [
+    { key: "transcript", label: "Transcript" },
+    { key: "reasoning", label: "Reasoning" },
+    { key: "memory", label: "Memory" },
+    { key: "arch", label: "Architecture" },
+    { key: "graph", label: "Graph" },
+    { key: "coach", label: "Coach log" },
+  ];
+
   return (
-    <main className="flex h-screen flex-col gap-3 p-3">
-      <header className="panel shrink-0 flex-row items-center gap-3 px-4 py-2.5">
-        <button onClick={() => router.push("/")} className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-2">
-            <Brain className="h-4 w-4 text-white" />
-          </div>
-          <span className="text-sm font-semibold text-white">Meeting Copilot</span>
+    <main className="flex h-screen flex-col">
+      {/* One-line header: identity, status, topic — actions on the right. */}
+      <header className="flex shrink-0 items-center gap-2.5 px-5 py-3 text-xs">
+        <button onClick={() => router.push("/")} className="flex items-center gap-2 text-slate-300 hover:text-white">
+          <span className="h-2.5 w-2.5 rounded-[4px] bg-accent" />
+          <span className="font-semibold">Copilot</span>
         </button>
-        <span
-          className={`chip border ${
-            state.connected
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-              : "border-amber-400/30 bg-amber-400/10 text-amber-300"
-          }`}
-        >
-          <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${state.connected ? "live-dot bg-emerald-400" : "bg-amber-400"}`} />
-          {state.status}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+        <span className={`h-1.5 w-1.5 rounded-full ${state.connected ? "live-dot bg-emerald-400" : "bg-amber-400"}`} />
+        {state.health?.topic && (
+          <span className="truncate text-slate-500">{state.health.topic}</span>
+        )}
+        <div className="ml-auto flex items-center gap-1">
           <button
             onClick={toggleOverlay}
             title="Always-on-top overlay (Ctrl+Shift+O)"
-            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-accent/50"
+            className="rounded-lg px-2.5 py-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
           >
             <PictureInPicture2 className="h-3.5 w-3.5" />
-            Overlay
           </button>
           <button
             onClick={() => toggleMic(speaker)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-              micActive
-                ? "border-red-400/50 bg-red-400/15 text-red-300"
-                : "border-edge text-slate-300 hover:border-accent/50"
+            title={micActive ? "Stop microphone" : "Use microphone"}
+            className={`rounded-lg px-2.5 py-1.5 transition-colors ${
+              micActive ? "text-red-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
             }`}
           >
             {micActive ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-            {micActive ? "Stop mic" : "Use mic"}
           </button>
           <button
             onClick={() => {
@@ -224,100 +176,143 @@ function LiveMeeting({ id }: { id: string }) {
               endMeeting(speaker);
             }}
             disabled={ending}
-            className="flex items-center gap-1.5 rounded-lg border border-edge bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-red-400/50 hover:text-red-300 disabled:opacity-60"
+            className="ml-1 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-rose-300 disabled:opacity-50"
           >
-            {ending ? (
-              <>
-                <FileText className="h-3.5 w-3.5 animate-pulse" /> Generating report…
-              </>
-            ) : (
-              <>
-                <Square className="h-3 w-3" /> End meeting
-              </>
-            )}
+            <Square className="h-3 w-3" />
+            {ending ? "Generating report…" : "End"}
           </button>
         </div>
       </header>
 
-      <HealthStrip health={state.health} />
+      {/* The intelligence stream: one focus, one suggestion. Centered, calm. */}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5">
+        <div className="w-full max-w-xl space-y-4">
+          <FocusCard focus={focus} onOpenConcept={() => setDrawer("concepts")} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-3">
-        <TranscriptPanel segments={state.segments} />
-        <UnderstandingPanel understandings={state.understandings} insights={state.insights} />
+          {suggestion && (
+            <motion.div
+              layout
+              className={`flex items-start gap-3 px-2 transition-opacity duration-300 ${
+                focus.mode === "alert" ? "opacity-40" : "opacity-100"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-slate-300">
+                  <span className="text-slate-500">Worth asking · </span>
+                  {suggestion.text}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-slate-600">{suggestion.hint}</p>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(suggestion.text).catch(() => undefined);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1200);
+                }}
+                title="Copy"
+                className="mt-0.5 shrink-0 rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-white/5 hover:text-slate-300"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => setDrawer("questions")}
+                className="mt-1 shrink-0 text-[11px] text-slate-600 transition-colors hover:text-slate-400"
+              >
+                more
+              </button>
+            </motion.div>
+          )}
 
-        <div className="panel h-full">
-          <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-edge px-1.5 pt-1.5">
-            {TABS.map(({ key, label, icon: Icon }) => {
-              const unseen = counts[key] - (seen.current[key] ?? 0);
-              return (
+          {/* Everything else: quiet typography, one click each. */}
+          <div className="space-y-1.5 px-2 pt-4">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+              {secondary.map((s) => (
                 <button
-                  key={key}
-                  onClick={() => setTab(key)}
-                  className={`relative flex items-center gap-1 rounded-t-lg px-2 py-2 text-[11px] font-medium transition-colors ${
-                    tab === key ? "bg-surface/80 text-white" : "text-slate-500 hover:text-slate-300"
-                  }`}
+                  key={s.key}
+                  onClick={() => setDrawer(s.key)}
+                  className="text-slate-400 transition-colors hover:text-white"
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                  {counts[key] > 0 && (
-                    <span
-                      className={`rounded-full px-1.5 text-[9px] ${
-                        unseen > 0 && tab !== key ? "bg-accent text-white" : "bg-edge text-slate-400"
-                      }`}
-                    >
-                      {counts[key]}
-                    </span>
-                  )}
+                  {s.label}
+                  {s.count > 0 && <span className="ml-1 text-slate-600">{s.count}</span>}
                 </button>
-              );
-            })}
-          </div>
-          <div className="min-h-0 flex-1">
-            {tab === "coach" && <CoachPanel tips={state.coachTips} />}
-            {tab === "tutor" && <TutorPanel concepts={state.concepts} />}
-            {tab === "questions" && <QuestionsPanel questions={state.questions} />}
-            {tab === "actions" && <ActionsPanel actions={state.actions} onToggle={markAction} />}
-            {tab === "decisions" && <DecisionsPanel decisions={state.decisions} />}
-            {tab === "memory" && <MemoryPanel memoryItems={state.memoryItems} retrievals={state.retrievals} />}
-            {tab === "arch" && <ArchPanel diagrams={state.diagrams} />}
-            {tab === "graph" && <GraphPanel nodes={state.nodes} edges={state.edges} />}
-            {tab === "people" && <PeoplePanel people={state.people} />}
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              {tertiary.map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setDrawer(s.key)}
+                  className="text-slate-600 transition-colors hover:text-slate-400"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="panel shrink-0 flex-row items-center gap-2 px-3 py-2"
-      >
-        <input
-          value={speaker}
-          onChange={(e) => setSpeaker(e.target.value)}
-          className="w-24 rounded-lg border border-edge bg-surface px-2.5 py-2 text-xs text-slate-300 outline-none focus:border-accent/50"
-          title="Your name (used as the speaker label)"
-        />
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder={
-            micActive
-              ? "Mic is listening — final phrases stream in automatically…"
-              : "Type what's being said (or use the mic) — the copilot analyzes continuously…"
-          }
-          className="flex-1 rounded-lg border border-edge bg-surface px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-accent/50"
-        />
-        <button
-          onClick={submit}
-          className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-accent to-accent-2 px-3.5 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <Send className="h-3.5 w-3.5" />
-          Send
-        </button>
-      </motion.div>
+      {/* Passive transcript: one faint line, then input. */}
+      <div className="shrink-0 px-5 pb-4">
+        <div className="mx-auto w-full max-w-xl">
+          <AnimatePresence mode="wait">
+            {lastLine && (
+              <motion.p
+                key={lastLine.id ?? lastLine.t}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="mb-2 truncate px-2 text-xs text-slate-600"
+              >
+                <span className="text-slate-500">{lastLine.speaker}</span> — {lastLine.text}
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <div className="flex items-center gap-2">
+            <input
+              value={speaker}
+              onChange={(e) => setSpeaker(e.target.value)}
+              className="w-20 rounded-xl border border-edge bg-panel px-2.5 py-2 text-xs text-slate-400 outline-none focus:border-accent/50"
+              title="Your name"
+            />
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder={micActive ? "Mic is listening…" : "Type what's being said…"}
+              className="flex-1 rounded-xl border border-edge bg-panel px-3.5 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-accent/50"
+            />
+            <button
+              onClick={submit}
+              className="rounded-xl bg-accent px-3 py-2 text-white transition-opacity hover:opacity-90"
+              title="Send"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
 
-      <CoachToast tips={state.coachTips} />
+      <Drawer
+        title={drawer ? DRAWER_TITLES[drawer] : ""}
+        open={drawer !== null}
+        onClose={() => setDrawer(null)}
+        wide={drawer === "transcript" || drawer === "graph" || drawer === "arch"}
+      >
+        {drawer === "actions" && <ActionsPanel actions={state.actions} onToggle={markAction} />}
+        {drawer === "decisions" && <DecisionsPanel decisions={state.decisions} />}
+        {drawer === "concepts" && <TutorPanel concepts={state.concepts} />}
+        {drawer === "people" && <PeoplePanel people={state.people} />}
+        {drawer === "transcript" && <TranscriptPanel segments={state.segments} />}
+        {drawer === "reasoning" && (
+          <UnderstandingPanel understandings={state.understandings} insights={state.insights} />
+        )}
+        {drawer === "questions" && <QuestionsPanel questions={state.questions} />}
+        {drawer === "memory" && <MemoryPanel memoryItems={state.memoryItems} retrievals={state.retrievals} />}
+        {drawer === "arch" && <ArchPanel diagrams={state.diagrams} />}
+        {drawer === "graph" && <GraphPanel nodes={state.nodes} edges={state.edges} />}
+        {drawer === "coach" && <CoachPanel tips={state.coachTips} />}
+      </Drawer>
     </main>
   );
 }

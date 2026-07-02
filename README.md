@@ -1,99 +1,99 @@
 # Meeting Copilot
 
-An AI teammate that sits silently in your meetings, understands everything being discussed, teaches you the concepts you don't know, suggests intelligent questions, and produces executive-quality documentation the moment the meeting ends.
+An AI teammate that exists alongside you throughout every meeting: it understands everything being discussed, remembers every past meeting, teaches you the concepts you don't know, coaches your participation in real time, and produces executive-quality documentation the moment the meeting ends.
 
-Not a transcription app — an elite staff engineer, TPM, researcher and tutor working quietly beside you.
+Not a transcription app — an elite staff engineer, TPM, researcher and mentor working quietly beside you, with the goal of making you significantly smarter **during** the meeting, not afterward.
 
-## What it does, live
+## The live experience
 
-| Panel | What you get |
+A **continuous reasoning engine** re-evaluates the whole meeting every 2.5 seconds against an evolving meeting state — topic, agreement level, assumptions, imminent decisions, missing information — instead of treating utterances independently. Eight specialized agents contribute on every tick:
+
+| Agent | What it gives you live |
 |---|---|
-| **Live transcript** | Speaker-separated, timestamped, searchable; important moments highlighted |
-| **Live AI understanding** | A continuously updated "what is happening and why it matters" narrative, plus the copilot's running private thoughts ("they seem worried about scalability", "a blocker was mentioned", "nobody has discussed security yet") |
-| **Concept tutor** | The moment someone says *OAuth, Redis, Kafka, RAG, optimistic concurrency…* you privately get: what it is, why it matters, why *they* are discussing it, beginner & advanced explanations, an analogy, common mistakes, and related concepts |
-| **Suggested questions** | Ranked questions an experienced engineer would ask right now — clarifying, strategic, architecture, risk, timeline — each with a usefulness score and rationale, one click to copy |
-| **Action items** | TODOs auto-detected with owner, deadline, priority, status; toggle done live |
-| **Decision log** | Every decision structured: what, reason, alternatives, tradeoffs, who approved, when |
-| **People** | Speaking share, inferred role, expertise, sentiment, influence per participant |
-| **Knowledge graph** | A live force-directed graph connecting people ↔ technologies ↔ projects as the discussion evolves |
+| **Coach** | Strategic participation guidance: "nobody owns that action item — ask who's taking it", "the topic just shifted, good moment to jump in", "you haven't spoken yet; here's an easy entry", "possible disagreement between Tom and Dev". High-urgency tips surface as toasts. |
+| **Teacher** | Concept Tutor 2.0: beginner / intermediate / advanced / interview-answer explanations, analogies, pitfalls, why it matters *in this meeting*, links to previous meetings that discussed it — and it knows what you've already learned, so familiar concepts collapse into "you know this". |
+| **Memory** | The AI memory timeline: "Redis has come up in 3 previous meetings, most recently Jun 18", "⚠️ this may contradict a decision from the API design review", plus automatic retrieval from the knowledge base and past meeting reports. |
+| **Architect** | A live **Mermaid architecture diagram** built from how the team describes systems talking to each other, with a version slider showing how it evolved. |
+| **PM** | Action items (owner, deadline, priority) and structured decisions — every one with a **confidence score** that visually distinguishes facts from inferences. |
+| **Risk** | Emerging blockers and risks, plus the **missing-information detector**: no rollback plan, no owner, no security discussion, no success metrics → proactive recommendations. |
+| **Question** | Ranked strategic questions that make you sound informed, one click to copy. |
+| **Documentarian** | The running "what is happening and why it matters" narrative, topic-shift detection, and (with an API key) periodic Claude enrichment of the whole state. |
 
-When the meeting ends you get a full markdown report: executive summary, timeline, decisions table, action items table, risks, questions worth raising, every technology explained, a ranked "learn this afterwards" path, people summary, your participation, plus a drafted follow-up email and Slack update — copyable and downloadable.
+A **meeting health strip** stays pinned above the panels: current topic + confidence, room mood (consensus / discussing / tension), engagement, participation balance, discussion completeness (expandable checklist), and estimated progress.
 
-Everything is persisted: **meeting memory** on the home page searches every transcript line, decision, action item and concept across all past meetings ("when did we discuss authentication?").
+## After the meeting
+
+- **Interactive replay** — drag a timeline slider and watch the transcript, the AI's reasoning, the knowledge graph and the architecture diagram rebuild themselves exactly as they happened. Decision markers dot the timeline.
+- **Executive Report 2.0** — summary, timeline, decisions & actions (with confidence), historical context, architecture diagram, risks, meeting health metrics, coaching recap, confidence analysis ("verify these inferences"), technologies explained, ranked learning plan, recommended reading, drafted follow-up email and Slack update.
+- **Meeting memory** — search everything ever discussed across all meetings from the home page.
+
+## Overlay mode
+
+Click **Overlay** (or `Ctrl+Shift+O`) during a meeting to pop a compact copilot — latest understanding, coach tip, top question, live transcript — into an **always-on-top Document Picture-in-Picture window** (Chrome/Edge). It floats over Zoom, Meet, Teams, Discord, anything: platform-agnostic, no meeting bots required. Falls back to a small popup in other browsers.
+
+## Personalization
+
+The settings page stores your name, role, experience, preferred explanation depth, known technologies and learning goals. The Teacher marks known concepts, tracks everything it has taught you across meetings, and the Coach uses your name to monitor your participation.
 
 ## Architecture
 
 ```
-frontend/  Next.js 15 · React 19 · TypeScript · Tailwind 4 · Framer Motion
-           └── WebSocket client → live panels, custom SVG force-graph
+frontend/  Next.js 15 · React 19 · TypeScript · Tailwind 4 · Framer Motion · Mermaid
+           └── WebSocket client → health strip + 9 live panels, replay, PiP overlay
 backend/   FastAPI · SQLAlchemy (SQLite by default, Postgres-ready) · WebSockets
-           ├── live.py       per-meeting session hub: ingest → analyze → persist → broadcast
-           ├── analyst.py    the intelligence: two engines behind one interface
-           │     ├── LLM engine (Claude) — structured extraction of everything, when a key is set
-           │     └── heuristic engine — pattern matching + built-in concept library, zero keys
-           ├── report.py     end-of-meeting executive report (LLM-enhanced when available)
-           └── simulator.py  a scripted, realistic engineering meeting for demo mode
+           ├── state.py        MeetingState — the single evolving model of the meeting
+           ├── agents/         Coach · Teacher · Memory · Architect · PM · Risk ·
+           │                   Question · Documentarian, run by a Coordinator
+           ├── live.py         session hub + the 2.5s continuous reasoning loop
+           ├── retrieval.py    pluggable providers (local knowledge docs + past reports;
+           │                   GitHub/Jira/Confluence slot in as new Provider classes)
+           ├── seed.py         seeded meeting history so memory/contradictions demo offline
+           └── report.py       Executive Report 2.0
 ```
 
-Speech input is pluggable:
-- **Demo mode** — a realistic scripted meeting streams in; zero setup.
-- **Live mode** — browser Web Speech API (Chrome/Edge) transcribes your microphone for free, or type utterances manually. A `DEEPGRAM_API_KEY` slot exists for production-grade server-side STT with diarization.
+Everything is event-driven: agents emit typed events (`concept`, `coach`, `memory`, `diagram`, `state_update`, …) that are persisted and streamed over one WebSocket. Adding a capability = adding an agent; adding a data source = adding a retrieval provider.
+
+Two brains behind one interface: with `ANTHROPIC_API_KEY` set, Claude enriches understanding, concepts and questions; without it, a fully offline heuristic engine (pattern extraction + a curated concept library) runs the entire product — which is what the demo uses.
 
 ## Quick start
 
-### 1. Backend
-
 ```bash
+# backend
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --port 8000
-```
 
-Runs fully offline. To enable Claude-powered analysis and reports:
-
-```bash
-cp .env.example .env   # then set ANTHROPIC_API_KEY
-```
-
-### 2. Frontend
-
-```bash
+# frontend (second terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
-Open **http://localhost:3000** and click **“Watch a demo meeting.”**
+Open **http://localhost:3000** → **“Watch a demo meeting.”** The first demo also seeds two historical meetings so the memory timeline, contradiction detection and prior-meeting links all fire.
 
 ### Tests
 
 ```bash
 cd backend
-python test_pipeline.py   # offline: full pipeline + report, no server needed
-python test_e2e.py        # against a running server: real WebSocket session
+python test_pipeline.py   # offline: full multi-agent pipeline + report, asserts contradictions/coach/diagrams
+python test_e2e.py        # against a running server: real WebSocket session, all V2 event types
 ```
 
 ## Configuration (`backend/.env`)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | *(empty)* | Enables Claude for live analysis + reports; otherwise heuristic mode |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | Model for analysis passes |
-| `DATABASE_URL` | `sqlite:///./meetingcopilot.db` | Any SQLAlchemy URL (Postgres for production) |
-| `ANALYSIS_EVERY_SEGMENTS` | `4` | How many utterances trigger a deep analysis pass |
-| `DEEPGRAM_API_KEY` | *(empty)* | Reserved for server-side streaming STT |
+| `ANTHROPIC_API_KEY` | *(empty)* | Enables Claude enrichment; otherwise heuristic mode |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | Model for enrichment + report writing |
+| `DATABASE_URL` | `sqlite:///./meetingcopilot.db` | Any SQLAlchemy URL |
+| `DEEPGRAM_API_KEY` | *(empty)* | Reserved for server-side streaming STT with diarization |
 
-## How the live pipeline works
-
-1. An utterance arrives (simulator, mic, or typed) → persisted, broadcast to every connected panel.
-2. A **fast pass** runs instantly on each utterance: concept detection, action/decision extraction, insight triggers, people stats, graph updates.
-3. Every N utterances a **deep pass** runs: the LLM (or heuristics) produces the evolving "what is happening" narrative and freshly ranked suggested questions, deduplicated against everything already extracted.
-4. On end: a final pass, then the full report is generated and stored on the meeting.
+Live-mic mode uses the browser Web Speech API (Chrome/Edge) — free, no keys. Knowledge base = markdown files in `backend/knowledge/`.
 
 ## Roadmap
 
-- Server-side streaming STT with real diarization (Deepgram/Whisper) and meeting-bot ingestion for Meet/Zoom/Teams
-- Company context retrieval: GitHub/Jira/Confluence/Notion/Slack connectors feeding RAG over org knowledge
-- Embedding-based semantic meeting memory (pgvector) on top of the existing keyword search
-- Cross-meeting knowledge graph and conflicting-decision detection
-- Confidence scores on extracted items; personalization by role and learning progress
+- Real retrieval connectors (GitHub, Jira, Confluence, Notion, Drive) behind the existing Provider interface
+- Server-side streaming STT with true diarization; system-audio capture for the overlay
+- Embedding-based semantic memory (pgvector) on top of keyword search
+- A packaged desktop overlay (Tauri) with click-through and edge docking
+- Question prediction and cross-meeting organizational knowledge graph

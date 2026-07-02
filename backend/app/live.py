@@ -1,8 +1,9 @@
-"""Live meeting sessions: WebSocket hub + event persistence.
+"""Live meeting sessions: WebSocket hub + the continuous reasoning engine.
 
-One LiveSession per active meeting. Segments arrive either from the demo
-simulator or from the client (browser Web Speech API / manual input); every
-derived event is persisted and broadcast to all connected panels.
+One LiveSession per active meeting. Utterances append to the shared
+MeetingState immediately (transcript is broadcast instantly); a background
+reasoning loop re-evaluates the whole state every few seconds and streams
+every agent's conclusions to all connected panels.
 """
 
 import asyncio
@@ -13,17 +14,43 @@ import time
 from fastapi import WebSocket
 from sqlalchemy import select
 
-from .analyst import MeetingAnalyst
+from .agents import Coordinator
+from .agents.base import AgentServices
 from .config import get_settings
 from .db import SessionLocal
 from .models import (
-    ActionItem, Concept, Decision, GraphEdge, GraphNode, Insight, Meeting,
-    Person, Segment, SuggestedQuestion, Understanding, utcnow,
+    ActionItem, CoachTip, Concept, Decision, Diagram, GraphEdge, GraphNode,
+    HealthSnapshot, Insight, Meeting, MemoryItem, Person, RetrievalItem,
+    Segment, SuggestedQuestion, Understanding, UserProfile, utcnow,
 )
 from .report import generate_report
 from .simulator import DEMO_SCRIPT, SPEAKER_ROLES
+from .state import MeetingState
 
 logger = logging.getLogger(__name__)
+
+TICK_SECONDS = 2.5
+
+
+def load_profile() -> dict:
+    db = SessionLocal()
+    try:
+        profile = db.get(UserProfile, "default")
+        if profile is None:
+            profile = UserProfile(id="default")
+            db.add(profile)
+            db.commit()
+        return {
+            "name": profile.name,
+            "role": profile.role,
+            "experience": profile.experience,
+            "depth": profile.depth,
+            "known_technologies": profile.known_technologies or [],
+            "learning_goals": profile.learning_goals or [],
+            "learned": profile.learned or {},
+        }
+    finally:
+        db.close()
 
 
 class LiveSession:
@@ -31,12 +58,26 @@ class LiveSession:
         self.meeting_id = meeting_id
         self.mode = mode
         self.sockets: set[WebSocket] = set()
-        self.analyst = MeetingAnalyst(meeting_id, SPEAKER_ROLES if mode == "demo" else {})
         self.started = time.monotonic()
-        self.segment_count = 0
         self.demo_task: asyncio.Task | None = None
-        self.analysis_lock = asyncio.Lock()
+        self.reasoning_task: asyncio.Task | None = None
         self.ended = False
+
+        profile = load_profile()
+        self.state = MeetingState(
+            meeting_id=meeting_id,
+            mode=mode,
+            my_name=profile.get("name") or "Me",
+            profile=profile,
+        )
+        if mode == "demo":
+            self.state.expected_total_segments = len(DEMO_SCRIPT)
+        self.coordinator = Coordinator(AgentServices(
+            db_factory=SessionLocal,
+            roles=SPEAKER_ROLES if mode == "demo" else {},
+            llm_enabled=get_settings().llm_enabled,
+        ))
+        self.reasoning_task = asyncio.create_task(self._reasoning_loop())
 
     # -- broadcasting ---------------------------------------------------- #
 
@@ -57,44 +98,43 @@ class LiveSession:
         if self.ended or not text.strip():
             return
         t = t if t is not None else time.monotonic() - self.started
+        text = text.strip()
         db = SessionLocal()
         try:
-            seg = Segment(meeting_id=self.meeting_id, t=t, speaker=speaker, text=text.strip())
+            seg = Segment(meeting_id=self.meeting_id, t=t, speaker=speaker, text=text)
             db.add(seg)
             db.commit()
-            await self.broadcast({"type": "transcript_segment", "id": seg.id, "t": t, "speaker": speaker, "text": text.strip()})
+            seg_id = seg.id
+        finally:
+            db.close()
+        self.state.segments.append({"t": t, "speaker": speaker, "text": text})
+        await self.broadcast({"type": "transcript_segment", "id": seg_id, "t": t, "speaker": speaker, "text": text})
 
-            events = self.analyst.on_segment(t, speaker, text.strip())
+    # -- the continuous reasoning loop --------------------------------------#
+
+    async def _reasoning_loop(self):
+        try:
+            while not self.ended:
+                await asyncio.sleep(TICK_SECONDS)
+                await self._tick()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("reasoning loop crashed")
+
+    async def _tick(self):
+        events = await self.coordinator.tick(self.state)
+        if not events:
+            return
+        db = SessionLocal()
+        try:
             for event in events:
                 self._persist_event(db, event)
             db.commit()
-            for event in events:
-                await self.broadcast(event)
         finally:
             db.close()
-
-        self.segment_count += 1
-        if self.segment_count % get_settings().analysis_every_segments == 0:
-            asyncio.create_task(self.run_analysis())
-
-    async def run_analysis(self):
-        async with self.analysis_lock:
-            try:
-                events = await self.analyst.analyze()
-            except Exception:
-                logger.exception("analysis pass failed")
-                return
-            if not events:
-                return
-            db = SessionLocal()
-            try:
-                for event in events:
-                    self._persist_event(db, event)
-                db.commit()
-            finally:
-                db.close()
-            for event in events:
-                await self.broadcast(event)
+        for event in events:
+            await self.broadcast(event)
 
     # -- persistence ------------------------------------------------------#
 
@@ -104,24 +144,32 @@ class LiveSession:
         if kind == "understanding":
             db.add(Understanding(meeting_id=mid, t=e["t"], text=e["text"]))
         elif kind == "insight":
-            db.add(Insight(meeting_id=mid, t=e["t"], kind=e["kind"], text=e["text"]))
+            db.add(Insight(meeting_id=mid, t=e["t"], kind=e["kind"], text=e["text"],
+                           confidence=e.get("confidence", 0.6)))
         elif kind == "concept":
             db.add(Concept(
                 meeting_id=mid, term=e["term"], category=e["category"], what=e["what"],
                 why_matters=e["why_matters"], why_now=e["why_now"], beginner=e["beginner"],
-                advanced=e["advanced"], analogy=e["analogy"], pitfalls=e["pitfalls"],
+                intermediate=e.get("intermediate", ""), advanced=e["advanced"],
+                interview=e.get("interview", ""), analogy=e["analogy"], pitfalls=e["pitfalls"],
                 related=e["related"], mentions=e["mentions"], first_t=e["first_t"],
+                known=e.get("known", False), prior_meetings=e.get("prior_meetings", []),
             ))
         elif kind == "concept_mention":
             row = db.scalars(select(Concept).where(Concept.meeting_id == mid, Concept.term == e["term"])).first()
             if row:
                 row.mentions = e["mentions"]
         elif kind == "question":
-            db.add(SuggestedQuestion(meeting_id=mid, t=e["t"], text=e["text"], category=e["category"], score=e["score"], rationale=e["rationale"]))
+            db.add(SuggestedQuestion(meeting_id=mid, t=e["t"], text=e["text"],
+                                     category=e["category"], score=e["score"], rationale=e["rationale"]))
         elif kind == "action_item":
-            db.add(ActionItem(meeting_id=mid, t=e["t"], task=e["task"], owner=e["owner"], deadline=e["deadline"], priority=e["priority"], status=e["status"], dependencies=e["dependencies"]))
+            db.add(ActionItem(meeting_id=mid, t=e["t"], task=e["task"], owner=e["owner"],
+                              deadline=e["deadline"], priority=e["priority"], status=e["status"],
+                              dependencies=e["dependencies"], confidence=e.get("confidence", 0.7)))
         elif kind == "decision":
-            db.add(Decision(meeting_id=mid, t=e["t"], decision=e["decision"], reason=e["reason"], alternatives=e["alternatives"], tradeoffs=e["tradeoffs"], approved_by=e["approved_by"]))
+            db.add(Decision(meeting_id=mid, t=e["t"], decision=e["decision"], reason=e["reason"],
+                            alternatives=e["alternatives"], tradeoffs=e["tradeoffs"],
+                            approved_by=e["approved_by"], confidence=e.get("confidence", 0.8)))
         elif kind == "person":
             row = db.scalars(select(Person).where(Person.meeting_id == mid, Person.name == e["name"])).first()
             if row is None:
@@ -135,9 +183,30 @@ class LiveSession:
             row.influence = e["influence"]
         elif kind == "graph":
             for n in e["nodes"]:
-                db.add(GraphNode(meeting_id=mid, key=n["key"], label=n["label"], kind=n["kind"]))
+                db.add(GraphNode(meeting_id=mid, key=n["key"], label=n["label"], kind=n["kind"],
+                                 t=n.get("t", e.get("t", 0.0))))
             for edge in e["edges"]:
-                db.add(GraphEdge(meeting_id=mid, source=edge["source"], target=edge["target"], relation=edge["relation"]))
+                db.add(GraphEdge(meeting_id=mid, source=edge["source"], target=edge["target"],
+                                 relation=edge["relation"], t=edge.get("t", e.get("t", 0.0))))
+        elif kind == "coach":
+            db.add(CoachTip(meeting_id=mid, t=e["t"], kind=e["kind"], text=e["text"],
+                            urgency=e.get("urgency", "normal"), confidence=e.get("confidence", 0.6)))
+        elif kind == "memory":
+            db.add(MemoryItem(meeting_id=mid, t=e["t"], kind=e["kind"], text=e["text"],
+                              ref_meeting_id=e.get("ref_meeting_id", ""),
+                              ref_meeting_title=e.get("ref_meeting_title", ""),
+                              confidence=e.get("confidence", 0.7)))
+        elif kind == "retrieval":
+            db.add(RetrievalItem(meeting_id=mid, t=e["t"], source=e["source"], title=e["title"],
+                                 summary=e["summary"], ref=e["ref"]))
+        elif kind == "diagram":
+            db.add(Diagram(meeting_id=mid, t=e["t"], version=e["version"], title=e["title"],
+                           mermaid=e["mermaid"]))
+        elif kind == "state_update":
+            db.add(HealthSnapshot(meeting_id=mid, t=e["t"], topic=e["topic"],
+                                  topic_confidence=e["topic_confidence"], agreement=e["agreement"],
+                                  engagement=e["engagement"], balance=e["balance"],
+                                  completeness=e["completeness"], progress=e["progress"]))
 
     # -- demo playback ------------------------------------------------------#
 
@@ -163,14 +232,14 @@ class LiveSession:
     async def end(self, my_name: str = ""):
         if self.ended:
             return
-        self.ended = True
         if self.demo_task:
             self.demo_task.cancel()
         await self.broadcast({"type": "status", "text": "Meeting ended — generating report…"})
-        # Final analysis pass over any remaining segments, then the report.
-        async with self.analysis_lock:
-            pass
-        await self.run_analysis()
+        # One final pass over anything not yet processed, then stop the loop.
+        await self._tick()
+        self.ended = True
+        if self.reasoning_task:
+            self.reasoning_task.cancel()
         db = SessionLocal()
         try:
             meeting = db.get(Meeting, self.meeting_id)
@@ -178,7 +247,7 @@ class LiveSession:
             meeting.ended_at = utcnow()
             db.commit()
             try:
-                meeting.report_md = await generate_report(db, meeting, my_name)
+                meeting.report_md = await generate_report(db, meeting, my_name or self.state.my_name)
             except Exception:
                 logger.exception("report generation failed")
                 meeting.report_md = "# Report generation failed\nSee server logs."

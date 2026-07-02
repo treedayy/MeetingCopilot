@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { CalendarClock, CheckSquare, Square, ListTodo, User } from "lucide-react";
+import { ConfidenceChip } from "@/components/ConfidenceChip";
 import { fmtTime, type ActionItem } from "@/lib/types";
 
 const PRIORITY: Record<string, string> = {
@@ -62,6 +63,7 @@ export function ActionsPanel({
                   </span>
                 )}
                 <span className={`chip border ${PRIORITY[a.priority]}`}>{a.priority}</span>
+                <ConfidenceChip value={a.confidence} />
                 <span>captured {fmtTime(a.t)}</span>
               </div>
             </div>

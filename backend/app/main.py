@@ -4,12 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .db import Base, engine
-from .routers import meetings, search, ws
+from .db import Base, auto_migrate, engine
+from .routers import meetings, profile, search, ws
 
 logging.basicConfig(level=logging.INFO)
 
 Base.metadata.create_all(bind=engine)
+auto_migrate()
 
 settings = get_settings()
 
@@ -24,6 +25,7 @@ app.add_middleware(
 
 app.include_router(meetings.router)
 app.include_router(search.router)
+app.include_router(profile.router)
 app.include_router(ws.router)
 
 

@@ -251,6 +251,38 @@ CONCEPTS: dict[str, dict] = {
 }
 
 
+# Intermediate-depth explanations: more than the analogy, less than the
+# operational detail of `advanced`. Keyed identically to CONCEPTS.
+INTERMEDIATE: dict[str, str] = {
+    "oauth": "In practice you register your app with an identity provider, redirect users there to log in, and receive back a short-lived access token whose scopes define exactly what your app may do; your backend then sends that token with each API call.",
+    "jwt": "A JWT carries its own verifiable claims, so a service can check who is calling by validating one signature — no session-store lookup — which is why it pairs naturally with microservices and API gateways.",
+    "redis": "You put Redis in front of slow or expensive operations: check the cache first, fall back to the database on a miss, and write the result back with a TTL. The same primitives also give you counters, queues, locks and pub/sub.",
+    "kafka": "Producers write events to named topics; consumers subscribe and process at their own pace with their position tracked as an offset. Because the log is durable and replayable, new consumers can join later and rebuild state from history.",
+    "kubernetes": "You describe workloads in YAML manifests (image, replicas, resources); the control plane schedules containers onto nodes and constantly repairs drift — killing unhealthy pods, rescheduling, and scaling per the rules you set.",
+    "terraform": "You model infrastructure as declarative resources in .tf files; `terraform plan` shows exactly what would change and `apply` makes it so, with a state file tracking what Terraform manages.",
+    "rag": "At query time you embed the user's question, fetch the most similar chunks from an index of your documents, and paste them into the model's prompt with instructions to answer from that context and cite it.",
+    "vector database": "Documents are converted to embedding vectors and stored in an index built for nearest-neighbor search; a query is embedded the same way and the closest vectors — the most semantically similar content — come back in milliseconds.",
+    "embedding": "An embedding model maps text to a fixed-length vector; you store vectors for your content once, then compare the query's vector against them with cosine similarity to find related meaning regardless of exact wording.",
+    "microservice": "Each service owns one capability and its own data, exposes an API, and deploys independently; services communicate over the network via REST/gRPC or events, which trades in-process simplicity for team autonomy.",
+    "opentelemetry": "You add the OTel SDK to each service; it creates spans around operations and propagates a trace context header across calls, so a single request's full path — with timings — can be reassembled in any observability backend.",
+    "fastify": "You define routes with JSON Schemas for params, body and response; Fastify validates input automatically and uses the response schema to serialize output much faster than generic JSON.stringify.",
+    "graphql": "The server publishes a typed schema; clients send queries selecting exact fields, and the server resolves each field with resolver functions — one round trip even for deeply nested data.",
+    "rate limit": "Each request decrements a counter kept per user/key in a shared store like Redis; when the budget for the window is exhausted the API returns 429 with Retry-After until tokens refill.",
+    "optimistic concurrency": "Reads return the row plus a version number; updates say 'set X where id=… and version=…'. If another writer bumped the version first, zero rows match — the app reloads the fresh data and retries or asks the user to merge.",
+    "event sourcing": "Commands append immutable events to a log instead of updating rows; read models (projections) fold the events into whatever shapes queries need, and can be rebuilt from scratch by replaying.",
+    "feature flag": "Code paths are wrapped in runtime checks against a flag service; targeting rules decide per user or percentage who gets the new path, so releasing is a config change instead of a deploy.",
+    "websocket": "The client upgrades an HTTP request into a persistent socket; after that either side sends frames whenever it wants, which is what makes sub-second push updates possible without polling.",
+    "circuit breaker": "A wrapper counts recent failures per dependency; past a threshold it 'opens' and instantly fails calls for a cooldown, then lets a few probes through and closes again once the dependency recovers.",
+    "sso": "Apps delegate login to a central identity provider; the IdP authenticates once and hands each app a signed assertion (SAML) or ID token (OIDC), so access is granted and revoked in one place.",
+    "postgres": "You get strict schemas, transactions and joins, plus modern extras — JSONB columns for flexible data, full-text search, and extensions like pgvector — making it a strong default for nearly any persistent data.",
+    "api gateway": "All client traffic hits the gateway first; it authenticates the request, applies rate limits, then routes to the right internal service — so those concerns live in one place instead of every codebase.",
+}
+
+for _key, _text in INTERMEDIATE.items():
+    if _key in CONCEPTS:
+        CONCEPTS[_key]["intermediate"] = _text
+
+
 import re
 
 

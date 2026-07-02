@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, Brain, Check, Copy, Download } from "lucide-react";
+import { ArrowLeft, Brain, Check, Copy, Download, Play } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
@@ -56,6 +56,12 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           <ArrowLeft className="h-3.5 w-3.5" /> Home
         </button>
         <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => router.push(`/meeting/${id}/replay`)}
+            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/50"
+          >
+            <Play className="h-3.5 w-3.5" /> Replay
+          </button>
           <button
             onClick={() => {
               if (report?.report_md) {

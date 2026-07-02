@@ -54,13 +54,20 @@ async def main():
         detail = (await http.get(f"{API}/api/meetings/{mid}")).json()
         print(f"persisted: {len(detail['segments'])} segments, {len(detail['concepts'])} concepts, "
               f"{len(detail['actions'])} actions, {len(detail['decisions'])} decisions, "
-              f"{len(detail['graph']['nodes'])} graph nodes")
+              f"{len(detail['graph']['nodes'])} graph nodes, {len(detail['coach_tips'])} coach tips, "
+              f"{len(detail['memory_items'])} memory items, {len(detail['retrievals'])} retrievals, "
+              f"{len(detail['diagrams'])} diagram versions, {len(detail['health'])} health snapshots")
 
         search = (await http.get(f"{API}/api/search", params={"q": "kafka"})).json()
         print(f"search 'kafka': {len(search['results'])} results")
 
-        for evt in ("transcript_segment", "concept", "person", "graph", "report_ready"):
+        prof = (await http.get(f"{API}/api/profile")).json()
+        print(f"profile learned concepts: {len(prof['learned'])}")
+
+        for evt in ("transcript_segment", "concept", "person", "graph", "state_update", "report_ready"):
             assert counts.get(evt), f"missing event type {evt}"
+        assert detail["memory_items"], "no cross-meeting memory persisted"
+        assert detail["health"], "no health snapshots persisted"
         print("E2E OK")
         return 0
 

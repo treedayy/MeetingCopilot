@@ -11,6 +11,10 @@ const KIND_COLORS: Record<string, string> = {
   service: "#c084fc",
   topic: "#94a3b8",
   decision: "#4ade80",
+  action: "#fbbf24",
+  risk: "#fb7185",
+  question: "#a78bfa",
+  document: "#94a3b8",
 };
 
 interface SimNode extends GraphNode {

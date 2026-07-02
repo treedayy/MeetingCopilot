@@ -12,8 +12,9 @@ export interface Understanding {
 
 export interface Insight {
   t: number;
-  kind: "thought" | "alert" | "reminder";
+  kind: "thought" | "alert" | "reminder" | "topic";
   text: string;
+  confidence?: number;
 }
 
 export interface Concept {
@@ -23,12 +24,61 @@ export interface Concept {
   why_matters: string;
   why_now: string;
   beginner: string;
+  intermediate: string;
   advanced: string;
+  interview: string;
   analogy: string;
   pitfalls: string;
   related: string[];
   mentions: number;
   first_t: number;
+  known?: boolean;
+  prior_meetings?: { id: string; title: string; date: string }[];
+}
+
+export interface CoachTip {
+  t: number;
+  kind: "timing" | "gap" | "participation" | "ownership" | "reminder" | "guidance";
+  text: string;
+  urgency: "low" | "normal" | "high";
+  confidence: number;
+}
+
+export interface MemoryItem {
+  t: number;
+  kind: "mention" | "related_decision" | "contradiction";
+  text: string;
+  ref_meeting_id: string;
+  ref_meeting_title: string;
+  confidence: number;
+}
+
+export interface RetrievalItem {
+  t: number;
+  source: string;
+  title: string;
+  summary: string;
+  ref: string;
+}
+
+export interface DiagramVersion {
+  t: number;
+  version: number;
+  title: string;
+  mermaid: string;
+}
+
+export interface HealthState {
+  t: number;
+  topic: string;
+  topic_confidence: number;
+  agreement: number;
+  engagement: number;
+  balance: number;
+  completeness: number;
+  progress: number;
+  checklist?: Record<string, boolean>;
+  counts?: Record<string, number>;
 }
 
 export interface Question {
@@ -49,6 +99,7 @@ export interface ActionItem {
   priority: "low" | "medium" | "high";
   status: "open" | "done";
   dependencies: string[];
+  confidence?: number;
 }
 
 export interface Decision {
@@ -59,6 +110,7 @@ export interface Decision {
   alternatives: string[];
   tradeoffs: string;
   approved_by: string;
+  confidence?: number;
 }
 
 export interface Person {

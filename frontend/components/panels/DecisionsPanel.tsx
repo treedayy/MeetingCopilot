@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Gavel } from "lucide-react";
+import { ConfidenceChip } from "@/components/ConfidenceChip";
 import { fmtTime, type Decision } from "@/lib/types";
 
 export function DecisionsPanel({ decisions }: { decisions: Decision[] }) {
@@ -48,6 +49,7 @@ export function DecisionsPanel({ decisions }: { decisions: Decision[] }) {
                   ✓ {d.approved_by}
                 </span>
               )}
+              <ConfidenceChip value={d.confidence} />
               <span>{fmtTime(d.t)}</span>
             </div>
           </motion.div>

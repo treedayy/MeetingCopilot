@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 
 from . import llm
 from .models import (
-    ActionItem, Concept, Decision, Insight, Meeting, Person, Segment,
-    SuggestedQuestion, Understanding,
+    ActionItem, CoachTip, Concept, Decision, Diagram, HealthSnapshot, Insight,
+    Meeting, MemoryItem, Person, RetrievalItem, Segment, SuggestedQuestion,
+    Understanding,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,11 @@ def _collect(db: Session, meeting: Meeting) -> dict:
         "decisions": db.scalars(select(Decision).where(Decision.meeting_id == mid).order_by(Decision.t)).all(),
         "people": db.scalars(select(Person).where(Person.meeting_id == mid).order_by(Person.words.desc())).all(),
         "insights": db.scalars(select(Insight).where(Insight.meeting_id == mid).order_by(Insight.t)).all(),
+        "coach_tips": db.scalars(select(CoachTip).where(CoachTip.meeting_id == mid).order_by(CoachTip.t)).all(),
+        "memory_items": db.scalars(select(MemoryItem).where(MemoryItem.meeting_id == mid).order_by(MemoryItem.t)).all(),
+        "retrievals": db.scalars(select(RetrievalItem).where(RetrievalItem.meeting_id == mid).order_by(RetrievalItem.t)).all(),
+        "diagram": db.scalars(select(Diagram).where(Diagram.meeting_id == mid).order_by(Diagram.version.desc())).first(),
+        "health": db.scalars(select(HealthSnapshot).where(HealthSnapshot.meeting_id == mid).order_by(HealthSnapshot.t)).all(),
     }
 
 
@@ -101,18 +107,34 @@ def _assemble(meeting: Meeting, data: dict, ai: dict, my_name: str) -> str:
     add("")
 
     add("## Decisions")
-    add("| Time | Decision | Reason | Approved by |")
-    add("|---|---|---|---|")
+    add("| Time | Decision | Reason | Approved by | Confidence |")
+    add("|---|---|---|---|---|")
     for d in decisions:
-        add(f"| {_ts(d.t)} | {d.decision[:160]} | {d.reason or '—'} | {d.approved_by or '—'} |")
+        add(f"| {_ts(d.t)} | {d.decision[:160]} | {d.reason or '—'} | {d.approved_by or '—'} | {d.confidence:.0%} |")
     add("")
 
     add("## Action Items")
-    add("| Task | Owner | Deadline | Priority | Status |")
-    add("|---|---|---|---|---|")
+    add("| Task | Owner | Deadline | Priority | Status | Confidence |")
+    add("|---|---|---|---|---|---|")
     for a in actions:
-        add(f"| {a.task[:160]} | {a.owner} | {a.deadline or '—'} | {a.priority} | {a.status} |")
+        add(f"| {a.task[:160]} | {a.owner} | {a.deadline or '—'} | {a.priority} | {a.status} | {a.confidence:.0%} |")
     add("")
+
+    if data["memory_items"]:
+        add("## Historical Context")
+        for m2 in data["memory_items"]:
+            icon = "⚠️" if m2.kind == "contradiction" else "🕰️"
+            add(f"- {icon} {m2.text}")
+        add("")
+
+    if data["diagram"]:
+        add("## Architecture (as discussed)")
+        add(f"*Version {data['diagram'].version}, last updated {_ts(data['diagram'].t)} into the meeting.*")
+        add("")
+        add("```mermaid")
+        add(data["diagram"].mermaid)
+        add("```")
+        add("")
 
     add("## Risks")
     if ai.get("risks"):
@@ -209,10 +231,45 @@ def _assemble(meeting: Meeting, data: dict, ai: dict, my_name: str) -> str:
             add(f"- **{tkt.get('title')}** ({tkt.get('priority', 'Medium')}): {tkt.get('description', '')}")
         add("")
 
+    if data["health"]:
+        add("## Meeting Health")
+        last = data["health"][-1]
+        avg_agreement = sum(h.agreement for h in data["health"]) / len(data["health"])
+        add(f"- **Discussion completeness:** {last.completeness:.0%} of the standard checklist "
+            f"(owner, timeline, rollback, testing, monitoring, security, customer impact, metrics, risk)")
+        add(f"- **Participation balance:** {last.balance:.0%} (100% = perfectly even)")
+        add(f"- **Average agreement level:** {avg_agreement:+.2f} on a −1 (tension) to +1 (consensus) scale")
+        add(f"- **Topics covered:** {len({h.topic for h in data['health'] if h.topic})}")
+        add("")
+
+    if data["coach_tips"]:
+        add("## Coaching Recap")
+        for tip in data["coach_tips"]:
+            add(f"- **[{tip.kind}]** {_ts(tip.t)} — {tip.text}")
+        add("")
+
+    if data["retrievals"]:
+        add("## Recommended Reading")
+        for r in data["retrievals"]:
+            add(f"- **{r.title}** ({r.source}) — {r.summary[:180]}")
+        add("")
+
+    add("## Confidence Analysis")
+    add("Items below 70% are inferences worth double-checking, not established facts.")
+    uncertain = [("Decision", d.decision, d.confidence) for d in decisions if d.confidence < 0.7]
+    uncertain += [("Action item", a.task, a.confidence) for a in actions if a.confidence < 0.7]
+    uncertain += [("Observation", i.text, i.confidence) for i in data["insights"] if i.confidence < 0.6]
+    if uncertain:
+        for kind, text, conf in uncertain:
+            add(f"- **{kind}** ({conf:.0%}): {text[:140]}")
+    else:
+        add("- All extracted decisions and action items met the confidence threshold.")
+    add("")
+
     add("## AI Observations During the Meeting")
     for i in data["insights"]:
-        icon = {"alert": "🚨", "reminder": "⏰"}.get(i.kind, "💭")
-        add(f"- {icon} **{_ts(i.t)}** — {i.text}")
+        icon = {"alert": "🚨", "reminder": "⏰", "topic": "🔀"}.get(i.kind, "💭")
+        add(f"- {icon} **{_ts(i.t)}** — {i.text} *({i.confidence:.0%})*")
     add("")
 
     add("---")

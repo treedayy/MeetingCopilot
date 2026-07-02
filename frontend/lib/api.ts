@@ -30,4 +30,17 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
   deleteMeeting: (id: string) => request(`/api/meetings/${id}`, { method: "DELETE" }),
+  getProfile: () => request<Profile>("/api/profile"),
+  updateProfile: (profile: Partial<Profile>) =>
+    request<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(profile) }),
 };
+
+export interface Profile {
+  name: string;
+  role: string;
+  experience: string;
+  depth: string;
+  known_technologies: string[];
+  learning_goals: string[];
+  learned: Record<string, { count: number; last_meeting_id?: string }>;
+}

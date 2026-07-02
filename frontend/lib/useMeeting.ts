@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { WS_URL, api } from "./api";
 import type {
-  ActionItem, Concept, Decision, GraphEdge, GraphNode, Insight, Person,
-  Question, TranscriptSegment, Understanding,
+  ActionItem, CoachTip, Concept, Decision, DiagramVersion, GraphEdge,
+  GraphNode, HealthState, Insight, MemoryItem, Person, Question,
+  RetrievalItem, TranscriptSegment, Understanding,
 } from "./types";
 
 export interface MeetingState {
@@ -21,6 +22,11 @@ export interface MeetingState {
   people: Person[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+  coachTips: CoachTip[];
+  memoryItems: MemoryItem[];
+  retrievals: RetrievalItem[];
+  diagrams: DiagramVersion[];
+  health: HealthState | null;
 }
 
 const initialState: MeetingState = {
@@ -37,6 +43,11 @@ const initialState: MeetingState = {
   people: [],
   nodes: [],
   edges: [],
+  coachTips: [],
+  memoryItems: [],
+  retrievals: [],
+  diagrams: [],
+  health: null,
 };
 
 type Event = { type: string } & Record<string, unknown>;
@@ -101,6 +112,16 @@ function reducer(state: MeetingState, e: Event): MeetingState {
       }
       return { ...state, nodes, edges };
     }
+    case "coach":
+      return { ...state, coachTips: [...state.coachTips, e as unknown as CoachTip] };
+    case "memory":
+      return { ...state, memoryItems: [...state.memoryItems, e as unknown as MemoryItem] };
+    case "retrieval":
+      return { ...state, retrievals: [...state.retrievals, e as unknown as RetrievalItem] };
+    case "diagram":
+      return { ...state, diagrams: [...state.diagrams, e as unknown as DiagramVersion] };
+    case "state_update":
+      return { ...state, health: e as unknown as HealthState };
     case "report_ready":
       return { ...state, reportReady: true, status: "report ready" };
     default:
@@ -131,6 +152,13 @@ export function useMeeting(meetingId: string) {
           people: data.people,
           nodes: (data.graph as { nodes: GraphNode[] }).nodes,
           edges: (data.graph as { edges: GraphEdge[] }).edges,
+          coachTips: data.coach_tips,
+          memoryItems: data.memory_items,
+          retrievals: data.retrievals,
+          diagrams: data.diagrams,
+          health: (data.health as HealthState[]).length
+            ? (data.health as HealthState[])[(data.health as HealthState[]).length - 1]
+            : null,
           reportReady: Boolean(data.has_report),
         },
       });

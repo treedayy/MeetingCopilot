@@ -5,10 +5,11 @@ import { motion } from "framer-motion";
 import { AlarmClock, Brain, Lightbulb, TriangleAlert } from "lucide-react";
 import { fmtTime, type Insight, type Understanding } from "@/lib/types";
 
-const INSIGHT_ICONS = {
+const INSIGHT_ICONS: Record<string, React.ReactNode> = {
   thought: <Lightbulb className="h-3.5 w-3.5 shrink-0 text-sky-300" />,
   alert: <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-red-400" />,
   reminder: <AlarmClock className="h-3.5 w-3.5 shrink-0 text-amber-300" />,
+  topic: <Lightbulb className="h-3.5 w-3.5 shrink-0 text-violet-300" />,
 };
 
 export function UnderstandingPanel({
@@ -68,7 +69,7 @@ export function UnderstandingPanel({
             {item.kind === "summary" ? (
               <Brain className="h-3.5 w-3.5 shrink-0 text-slate-500" />
             ) : (
-              INSIGHT_ICONS[item.kind]
+              INSIGHT_ICONS[item.kind] ?? INSIGHT_ICONS.thought
             )}
             <span>
               <span className="mr-1.5 font-mono text-[10px] text-slate-600">{fmtTime(item.t)}</span>

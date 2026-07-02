@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  Brain, FileText, Mic, PlayCircle, Radio, Search, Sparkles, Trash2,
+  Brain, FileText, Mic, PlayCircle, Radio, Search, Sparkles, Trash2, UserCog,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtTime, type MeetingSummary, type SearchResult } from "@/lib/types";
@@ -62,6 +62,13 @@ export default function Home() {
               An elite staff engineer, TPM, and tutor — silently working beside you in every meeting.
             </p>
           </div>
+          <button
+            onClick={() => router.push("/settings")}
+            title="Personalization"
+            className="ml-auto rounded-xl border border-edge p-2.5 text-slate-400 transition-colors hover:border-accent/50 hover:text-slate-200"
+          >
+            <UserCog className="h-4 w-4" />
+          </button>
         </div>
       </motion.div>
 

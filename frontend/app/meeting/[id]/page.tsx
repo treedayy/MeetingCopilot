@@ -2,11 +2,11 @@
 
 import { Suspense, use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckSquare, ExternalLink, FileText, Mic, MicOff, Square } from "lucide-react";
+import { CheckSquare, ExternalLink, FileText, Mic, MicOff, Square, TriangleAlert } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { MermaidFigure } from "@/components/MermaidFigure";
 import { useMeeting, type MeetingState } from "@/lib/useMeeting";
-import { fmtTime, type TranscriptSegment } from "@/lib/types";
+import { fmtTime, type RiskEvent, type TranscriptSegment } from "@/lib/types";
 
 const TABS = ["notes", "tasks", "decisions", "transcript", "glossary", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -75,63 +75,39 @@ function MeetingWorkspace({ id }: { id: string }) {
     popout.current = window.open(url, "copilot-popout", "width=380,height=320,popup=yes");
   };
 
+  // Live meetings get the minimal capture layer — the workspace is
+  // post-meeting only, so the tool can be ignored while people talk.
+  if (isLive) {
+    return (
+      <LiveScreen
+        state={state}
+        ending={ending}
+        micActive={micActive}
+        onEnd={() => {
+          setEnding(true);
+          endMeeting();
+        }}
+        onPopout={openPopout}
+        onToggleMic={() => toggleMic("Me")}
+        onSubmit={sendUtterance}
+      />
+    );
+  }
+
   return (
     <AppShell>
       <div className="flex h-full flex-col">
         <PageHeader
           title={state.meetingTitle || "Meeting"}
-          meta={
-            isLive ? (
-              <span className="tag border-emerald-900 bg-emerald-950/60 text-emerald-400">
-                <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                In progress
-              </span>
-            ) : (
-              <span className="tag">Completed</span>
-            )
-          }
+          meta={<span className="tag">Completed</span>}
           actions={
-            isLive ? (
-              <>
-                <button
-                  onClick={openPopout}
-                  className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04]"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Pop out
-                </button>
-                <button
-                  onClick={() => toggleMic("Me")}
-                  className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] transition-colors ${
-                    micActive
-                      ? "border-red-900 bg-red-950/40 text-red-300"
-                      : "border-edge text-neutral-300 hover:bg-white/[0.04]"
-                  }`}
-                >
-                  {micActive ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-                  {micActive ? "Stop capture" : "Capture audio"}
-                </button>
-                <button
-                  onClick={() => {
-                    setEnding(true);
-                    endMeeting();
-                  }}
-                  disabled={ending}
-                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  <Square className="h-3 w-3" />
-                  {ending ? "Publishing notes…" : "End meeting"}
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => router.push(`/meeting/${id}/report`)}
-                className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04]"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Full summary
-              </button>
-            )
+            <button
+              onClick={() => router.push(`/meeting/${id}/report`)}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04]"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Full summary
+            </button>
           }
         />
 
@@ -161,9 +137,132 @@ function MeetingWorkspace({ id }: { id: string }) {
           {tab === "activity" && <ActivityTab state={state} />}
         </div>
 
-        {isLive && <Composer onSubmit={sendUtterance} micActive={micActive} />}
       </div>
     </AppShell>
+  );
+}
+
+/* -------------------------------------------------------------- Live mode */
+/* Three states only: Silent (default), Action (quiet log), Risk (interrupt). */
+
+function LiveScreen({
+  state,
+  ending,
+  micActive,
+  onEnd,
+  onPopout,
+  onToggleMic,
+  onSubmit,
+}: {
+  state: MeetingState;
+  ending: boolean;
+  micActive: boolean;
+  onEnd: () => void;
+  onPopout: () => void;
+  onToggleMic: () => void;
+  onSubmit: (speaker: string, text: string) => void;
+}) {
+  const [ackCount, setAckCount] = useState(0);
+  const [recentAction, setRecentAction] = useState<string | null>(null);
+  const seenActions = useRef(0);
+
+  // Action state: log quietly for a few seconds, never demand attention.
+  useEffect(() => {
+    if (state.actions.length > seenActions.current) {
+      const latest = state.actions[state.actions.length - 1];
+      seenActions.current = state.actions.length;
+      setRecentAction(`${latest.task}${latest.owner && latest.owner !== "TBD" ? ` — ${latest.owner}` : ""}`);
+      const timer = setTimeout(() => setRecentAction(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.actions]);
+
+  const activeRisk: RiskEvent | null = state.risks.length > ackCount ? state.risks[state.risks.length - 1] : null;
+  const lastLine = state.segments[state.segments.length - 1];
+  const elapsed = lastLine ? fmtTime(lastLine.t) : "0:00";
+
+  return (
+    <main className="flex h-screen flex-col bg-surface">
+      {/* One quiet header line — always the same, never rearranges. */}
+      <header className="flex shrink-0 items-center gap-2.5 px-5 py-3">
+        <span className="h-2.5 w-2.5 rounded-[3px] bg-accent" />
+        <span className="truncate text-[13px] text-neutral-400">{state.meetingTitle || "Meeting"}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={onPopout}
+            title="Pop out"
+            className="rounded-md px-2.5 py-1.5 text-neutral-500 transition-colors hover:bg-white/[0.04] hover:text-neutral-300"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onToggleMic}
+            title={micActive ? "Stop audio capture" : "Capture audio"}
+            className={`rounded-md px-2.5 py-1.5 transition-colors ${
+              micActive ? "text-red-400" : "text-neutral-500 hover:bg-white/[0.04] hover:text-neutral-300"
+            }`}
+          >
+            {micActive ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={onEnd}
+            disabled={ending}
+            className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.04] disabled:opacity-50"
+          >
+            <Square className="h-3 w-3" />
+            {ending ? "Preparing notes…" : "End meeting"}
+          </button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+        {activeRisk ? (
+          /* RISK — the only thing allowed to take the screen. */
+          <div className="w-full max-w-lg rounded-lg border border-amber-700/60 bg-amber-950/30 p-6">
+            <div className="flex items-center gap-2">
+              <TriangleAlert className="h-4 w-4 text-amber-400" />
+              <span className="text-[13px] font-semibold text-amber-300">{activeRisk.title}</span>
+            </div>
+            <p className="mt-3 text-[15px] leading-relaxed text-neutral-200">{activeRisk.text}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setAckCount(state.risks.length)}
+                className="rounded-md bg-amber-600/90 px-4 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* SILENT — the default. A clock, a counter, nothing to read. */
+          <div className="text-center">
+            <div className="font-mono text-4xl text-neutral-600">{elapsed}</div>
+            <div className="mt-3 text-[13px] text-neutral-600">
+              Recording · {state.actions.length} task{state.actions.length !== 1 ? "s" : ""} captured
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 px-6 pb-4">
+        <div className="mx-auto w-full max-w-xl">
+          {/* ACTION — a quiet, self-dismissing log line. */}
+          <p
+            className={`mb-2 truncate px-1 text-[12px] transition-opacity duration-500 ${
+              recentAction ? "text-neutral-500 opacity-100" : "opacity-0"
+            }`}
+          >
+            ✓ Task captured: {recentAction ?? ""}
+          </p>
+          {lastLine && (
+            <p className="mb-2 truncate px-1 text-[12px] text-neutral-700">
+              {lastLine.speaker}: {lastLine.text}
+            </p>
+          )}
+          <Composer onSubmit={onSubmit} micActive={micActive} />
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -498,7 +597,7 @@ function Composer({
     }
   };
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-edge px-6 py-3">
+    <div className="flex items-center gap-2">
       <input
         value={speaker}
         onChange={(e) => setSpeaker(e.target.value)}

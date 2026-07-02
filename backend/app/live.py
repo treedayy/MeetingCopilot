@@ -31,6 +31,56 @@ logger = logging.getLogger(__name__)
 
 TICK_SECONDS = 2.5
 
+# ---------------------------------------------------------------------------
+# The normalized record contract. Every piece of AI output is exactly one of:
+#   event    — raw transcript
+#   action   — a task with an owner or clear intent
+#   decision — a final choice or consensus
+#   risk     — a high-priority issue that justifies interrupting the meeting
+#   note     — everything else (summaries, terms, references, analysis)
+#
+# During a live meeting ONLY event / action / risk reach the client — risks
+# interrupt, actions log quietly, everything else stays silent until the
+# meeting ends. Decisions and notes are persisted for the post-meeting record.
+# ---------------------------------------------------------------------------
+
+CHANNEL_BY_TYPE = {
+    "transcript_segment": "event",
+    "action_item": "action",
+    "decision": "decision",
+    "risk": "risk",
+}
+CONTROL_TYPES = {"status", "report_ready", "error"}
+LIVE_CHANNELS = {"event", "action", "risk"}
+
+
+def channel_of(event: dict) -> str:
+    if event["type"] in CONTROL_TYPES:
+        return "control"
+    return CHANNEL_BY_TYPE.get(event["type"], "note")
+
+
+def derive_risks(events: list[dict]) -> list[dict]:
+    """Promote genuinely critical findings to the interruptive risk channel:
+    contradictions with prior decisions, and blocker/security alerts."""
+    risks = []
+    for e in events:
+        if e["type"] == "memory" and e.get("kind") == "contradiction":
+            risks.append({
+                "type": "risk", "t": e["t"], "kind": "conflict",
+                "title": "Conflicts with a prior decision",
+                "text": e["text"],
+                "ref_meeting_id": e.get("ref_meeting_id", ""),
+            })
+        elif e["type"] == "insight" and e.get("kind") == "alert" and e.get("confidence", 0) >= 0.8:
+            risks.append({
+                "type": "risk", "t": e["t"], "kind": "alert",
+                "title": "Needs attention",
+                "text": e["text"],
+                "ref_meeting_id": "",
+            })
+    return risks
+
 
 def load_profile() -> dict:
     db = SessionLocal()
@@ -108,7 +158,7 @@ class LiveSession:
         finally:
             db.close()
         self.state.segments.append({"t": t, "speaker": speaker, "text": text})
-        await self.broadcast({"type": "transcript_segment", "id": seg_id, "t": t, "speaker": speaker, "text": text})
+        await self.broadcast({"channel": "event", "type": "transcript_segment", "id": seg_id, "t": t, "speaker": speaker, "text": text})
 
     # -- the continuous reasoning loop --------------------------------------#
 
@@ -133,8 +183,14 @@ class LiveSession:
             db.commit()
         finally:
             db.close()
+        # Live contract: interrupt with risks, quietly log actions, stay
+        # silent about everything else until the meeting ends.
+        events += derive_risks(events)
         for event in events:
-            await self.broadcast(event)
+            ch = channel_of(event)
+            if not self.ended and ch not in LIVE_CHANNELS and ch != "control":
+                continue
+            await self.broadcast({"channel": ch, **event})
 
     # -- persistence ------------------------------------------------------#
 

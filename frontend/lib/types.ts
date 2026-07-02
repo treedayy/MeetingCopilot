@@ -68,6 +68,14 @@ export interface DiagramVersion {
   mermaid: string;
 }
 
+export interface RiskEvent {
+  t: number;
+  kind: "conflict" | "alert";
+  title: string;
+  text: string;
+  ref_meeting_id?: string;
+}
+
 export interface HealthState {
   t: number;
   topic: string;

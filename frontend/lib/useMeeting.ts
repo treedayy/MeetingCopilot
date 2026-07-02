@@ -5,7 +5,7 @@ import { WS_URL, api } from "./api";
 import type {
   ActionItem, CoachTip, Concept, Decision, DiagramVersion, GraphEdge,
   GraphNode, HealthState, Insight, MemoryItem, Person, Question,
-  RetrievalItem, TranscriptSegment, Understanding,
+  RetrievalItem, RiskEvent, TranscriptSegment, Understanding,
 } from "./types";
 
 export interface MeetingState {
@@ -30,6 +30,7 @@ export interface MeetingState {
   retrievals: RetrievalItem[];
   diagrams: DiagramVersion[];
   health: HealthState | null;
+  risks: RiskEvent[];
 }
 
 const initialState: MeetingState = {
@@ -54,6 +55,7 @@ const initialState: MeetingState = {
   retrievals: [],
   diagrams: [],
   health: null,
+  risks: [],
 };
 
 type Event = { type: string } & Record<string, unknown>;
@@ -128,6 +130,8 @@ function reducer(state: MeetingState, e: Event): MeetingState {
       return { ...state, diagrams: [...state.diagrams, e as unknown as DiagramVersion] };
     case "state_update":
       return { ...state, health: e as unknown as HealthState };
+    case "risk":
+      return { ...state, risks: [...state.risks, e as unknown as RiskEvent] };
     case "report_ready":
       return { ...state, reportReady: true, status: "completed", meetingStatus: "ended" };
     default:

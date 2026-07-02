@@ -146,6 +146,47 @@ def get_report(meeting_id: str, db: Session = Depends(get_db)):
     return {"id": m.id, "title": m.title, "report_md": m.report_md}
 
 
+@router.get("/{meeting_id}/records")
+def get_records(meeting_id: str, db: Session = Depends(get_db)):
+    """The normalized record model — the only schema integrations consume.
+
+    Every piece of output is exactly one of: event, action, decision, risk,
+    note. Export layers (Notion, Slack, Linear, …) read this; nothing else.
+    """
+    m = _meeting_or_404(db, meeting_id)
+    mid = m.id
+
+    def rows(model, order):
+        return db.scalars(select(model).where(model.meeting_id == mid).order_by(order)).all()
+
+    risks = [
+        {"t": i.t, "kind": "alert", "text": i.text}
+        for i in rows(Insight, Insight.t) if i.kind == "alert" and i.confidence >= 0.8
+    ] + [
+        {"t": x.t, "kind": "conflict", "text": x.text, "ref_meeting_id": x.ref_meeting_id}
+        for x in rows(MemoryItem, MemoryItem.t) if x.kind == "contradiction"
+    ]
+    notes = (
+        [{"t": u.t, "kind": "summary", "text": u.text} for u in rows(Understanding, Understanding.t)]
+        + [{"t": c.first_t, "kind": "term", "text": f"{c.term}: {c.what}"} for c in rows(Concept, Concept.first_t)]
+        + [{"t": q.t, "kind": "question", "text": q.text} for q in rows(SuggestedQuestion, SuggestedQuestion.t)]
+        + [{"t": r.t, "kind": "reference", "text": f"{r.title} — {r.summary}"} for r in rows(RetrievalItem, RetrievalItem.t)]
+        + [{"t": x.t, "kind": "reference", "text": x.text} for x in rows(MemoryItem, MemoryItem.t) if x.kind != "contradiction"]
+        + [{"t": d2.t, "kind": "diagram", "text": d2.mermaid} for d2 in rows(Diagram, Diagram.version)][-1:]
+    )
+    return {
+        "meeting": {"id": m.id, "title": m.title, "started_at": m.started_at.isoformat(),
+                    "ended_at": m.ended_at.isoformat() if m.ended_at else None},
+        "events": [{"t": s.t, "speaker": s.speaker, "text": s.text} for s in rows(Segment, Segment.t)],
+        "actions": [{"t": a.t, "task": a.task, "owner": a.owner, "deadline": a.deadline,
+                     "priority": a.priority, "status": a.status} for a in rows(ActionItem, ActionItem.t)],
+        "decisions": [{"t": d.t, "decision": d.decision, "reason": d.reason, "approved_by": d.approved_by}
+                      for d in rows(Decision, Decision.t)],
+        "risks": sorted(risks, key=lambda r: r["t"]),
+        "notes": sorted(notes, key=lambda n: n["t"]),
+    }
+
+
 class ActionUpdate(BaseModel):
     status: str  # open | done
 
